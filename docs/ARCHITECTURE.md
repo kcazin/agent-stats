@@ -45,7 +45,7 @@ Borrowed from how T3 Code runs its server and connects environments (`~/.t3/sour
    (`legacy_token_file`), so existing reporters keep reporting during the migration, but never for a machine that has
    its own token (enrolled or revoked): that gets 403.
 4. **Every server answers a well-known descriptor.** `GET /.well-known/agent-stats` →
-   `{"role":"hub","hubId":"…","name":"home","version":"0.2.1","protocol":2,"routes":["http://mac-mini:7777"]}`. Reporters use it to pick routes and
+   `{"role":"hub","hubId":"…","name":"home","version":"0.5.0","protocol":2,"routes":["http://mac-mini:7777"],"timezone":"Europe/Paris"}`. Reporters use it to pick routes and
    check compatibility; `doctor` uses it to explain what's wrong.
 5. **Explicit protocol numbers.** Reports carry `protocol` (absent = 1, the JS reporter). A hub that can't read a
    protocol answers 426 with the versions it speaks.
@@ -95,14 +95,26 @@ one implicit hub, which is how existing installs and the golden tests run.
 ```toml
 machine = "cachyos-x8664"        # id the hubs key data by; default: hostname
 label = "Linux workstation"      # shown on dashboards and the site
-timezone = "Asia/Tokyo"          # day boundaries; must match the hub's
+timezone = "Europe/Paris"        # day boundaries; must match the hub's (see Timezones)
 
 [[hub]]
 name = "home"
 id = "6f1c…"                     # hubId, learned at join
 routes = ["http://mac-mini:7777", "http://100.101.102.103:7777"]
 token_file = "secrets/hub-6f1c….token"
+view_token_file = "secrets/hub-6f1c….view.token"   # read-only, for a widget on this machine (see View tokens)
 ```
+
+**Timezones.** Reporter and hub must cut days in the same zone. The hub's is `timezone` in hub.toml, else its
+machine's zone (Asia/Tokyo without a hub.toml, as the JS hub hard-coded). It says which in `/.well-known/agent-stats`
+and the `/pair` answer. A reporter's is `STATS_TZ`, else `timezone` in config.toml, else the zone its existing state
+was counted in (so an unset timezone keeps meaning what it meant; Asia/Tokyo when only the JS reporter's state is
+there), else the machine's. `join` writes the hub's zone into config.toml when the machine has none of its own, and
+warns when they differ; `doctor` warns too.
+
+**Managed mode.** When an app ships agent-stats (a binary under `X.app/Contents/`, or `AGENT_STATS_MANAGED_BY=X`), the
+app installs, runs and updates it: `update` and `rollback` refuse and point at the app, `update --auto` does nothing,
+`service install`/`uninstall` refuse (`service status` works). `status` and `doctor` name the app.
 
 Reporter details (crates/reporter):
 
@@ -164,7 +176,7 @@ Reporter details (crates/reporter):
 ```toml
 name = "home"
 listen = "100.101.102.103:7777"  # or 127.0.0.1:7777 (solo), 0.0.0.0:$PORT (cloud)
-timezone = "Asia/Tokyo"
+timezone = "Europe/Paris"        # default: this machine's zone
 public = false                   # true: serve GET /stats itself (cloud hub)
 cors_origins = ["https://example.com"]   # /stats only; exact match, Vary: Origin
 legacy_token_file = "hub_token"  # accept the old shared token (paths are relative to config_dir())
@@ -221,8 +233,8 @@ the file doesn't set them.
   pairing code), or `--insecure-no-auth`. Tokens are compared in constant time. `/report` takes the legacy token (any
   machine) or a machine token (its own machine only, 403 otherwise). The dashboard, `/api/state` and `/api/repos` show
   paths, so they need a loopback client, a peer in `trusted_networks`, or the admin token (`config_dir()/secrets/hub-admin.token`, created by `hub serve`)
-  as `Authorization: Bearer`, or as a cookie set by opening `/?token=<admin token>` once. `/api/public` is open when
-  `public = true`, admin-only otherwise. Token-less access (loopback or `trusted_networks`) also needs a `Host` header that
+  as `Authorization: Bearer`, or as a cookie set by opening `/?token=<admin token>` once, or a machine's view token as
+  `Authorization: Bearer`. `/api/public` is open when `public = true`, needs the same otherwise. Token-less access (loopback or `trusted_networks`) also needs a `Host` header that
   names this hub (anti DNS rebinding): `localhost`, `127.0.0.1`, `[::1]`, the listen host, an `advertise` host, the machine's
   hostname or `<hostname>.local`, `*.ts.net`, or any IP literal (an address can't be rebound). Any other `Host` needs the admin token. A valid token is unaffected, as are
   `/report`, `/pair`, the well-known route and `/stats`.
@@ -269,7 +281,14 @@ the file doesn't set them.
   shape (`machine, label, platform, at, full, days[], repos[], sessions[]`) plus, from protocol 2: `protocol`,
   `version`, `machineId`, and `repos[].remote` when known. A machine token only accepts its own `machine`.
   Answers `{"ok":true}`; 401 bad token, 403 machine mismatch, 413 too large, 422 invalid, 426 protocol.
-- `POST /pair` (reporter → hub): `{code, machine, label, platform, version}` → `{hubId, name, token, routes}`.
+- `POST /pair` (reporter → hub): `{code, machine, label, platform, version}` → `{hubId, name, token, viewToken, routes,
+  timezone}` (`viewToken` and `timezone` from 0.5).
+- **View tokens.** Each enrolled machine gets a read-only token at pairing, for a widget on that machine: it opens the
+  dashboard, `/api/state`, `/api/repos`, `/api/stream` and `/api/public` as `Authorization: Bearer`, and nothing else
+  (no `/report`, no `/release`). Stored hashed in `view_tokens`; revoking the machine revokes it. `POST /view-token`
+  with the machine's own token issues a new one (replacing the old), for machines paired before 0.5:
+  `agent-stats hubs view-token` does that and saves it beside the reporting token. Answers `{"viewToken"}`; 401 for
+  anything but a live machine token.
 - `GET /release` (reporter → hub), same auth as `POST /report` (machine token, legacy token) or the admin token:
   `{"version":"<v>","targets":["<target>", ...]}`, or `{"version":null,"targets":[]}` when there is nothing to
   offer. The hub only ever advertises its own running version, so a reporter never gets ahead of the hub's protocol.

@@ -29,7 +29,7 @@ precedence, routes, per-hub acknowledgement and the git repo identity.
 | `HUB_TOKEN` | contents of `config_dir()/hub_token`. Without any hub with a token, `report` exits with an error, unless `--dry`/`--print` is set |
 | `STATS_MACHINE` | `machine` in config.toml, else the hostname without `.local` |
 | `STATS_LABEL` | `label` in config.toml, else the machine name |
-| `STATS_TZ` | `timezone` in config.toml, else `Asia/Tokyo`: the IANA zone that sets day boundaries. The tz database is built in |
+| `STATS_TZ` | `timezone` in config.toml, else the zone existing counts are in, else this machine's: the IANA zone that sets day boundaries (`join` sets the hub's when there is none). The tz database is built in |
 | `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME` | `~/.claude` (transcripts in `projects/`), `~/.codex`, `~/.grok` |
 | `XDG_STATE_HOME` | `~/.local/state`; state goes in `agent-stats/reporter-state.json`, status in `agent-stats/report-status.json` |
 | `STATS_VERBOSE` | set to `1` to log what each tick did and how long it took |
