@@ -1,0 +1,17 @@
+[package]
+name = "agent-stats-ops"
+version = "0.4.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+agent-stats-common = { path = "../common" }
+# `update --auto` from a hub reads the reporter's hubs and verifies their routes as the reporter does.
+agent-stats-reporter = { path = "../reporter" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+sha2 = "0.10"
+ureq = "3"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+toml = "0.9"

@@ -1,0 +1,18 @@
+[package]
+name = "agent-stats"
+version = "0.4.0"
+edition = "2021"
+description = "One binary for every agent-stats role: report, hub, relay, plus install and updates"
+publish = false
+
+[[bin]]
+name = "agent-stats"
+path = "src/main.rs"
+
+[dependencies]
+agent-stats-common = { path = "../common" }
+agent-stats-reporter = { path = "../reporter" }
+agent-stats-hub = { path = "../hub" }
+agent-stats-relay = { path = "../relay" }
+agent-stats-ops = { path = "../ops" }
+libc = "0.2"

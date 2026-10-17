@@ -1,0 +1,5 @@
+{"timestamp":"2026-10-11T03:00:00.000Z","type":"session_meta","payload":{"id":"019a0000-0000-7000-8000-00000000000c","parent_thread_id":"019a0000-0000-7000-8000-0000000000ff","cwd":"{{HOME}}/Dev/site"}}
+{"timestamp":"2026-10-11T03:00:00.500Z","type":"turn_context","payload":{"model":"gpt-5.5","cwd":"{{HOME}}/Dev/site"}}
+{"timestamp":"2026-10-11T03:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":4000,"cached_input_tokens":2000,"output_tokens":300,"total_tokens":4300}}}}
+{"timestamp":"2026-10-11T03:00:10.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":4040,"cached_input_tokens":2000,"output_tokens":310,"total_tokens":4350},"last_token_usage":{"input_tokens":40,"cached_input_tokens":0,"output_tokens":10,"total_tokens":50}}}}
+{"timestamp":"2026-10-11T03:00:11.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{}","call_id":"c9"}}

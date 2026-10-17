@@ -1,0 +1,17 @@
+[package]
+name = "agent-stats-hub"
+version = "0.4.0"
+edition = "2021"
+description = "The agent-stats hub: receives reports, keeps history, serves the dashboard, publishes the public payload"
+publish = false
+
+[dependencies]
+agent-stats-common = { path = "../common" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+libc = "0.2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+ureq = "3"
+sha2 = "0.10"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always", "tz-system"] }

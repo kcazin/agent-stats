@@ -1,0 +1,41 @@
+{
+ "version": 1,
+ "models": [
+  "gpt-5.5",
+  "claude-opus-4-5"
+ ],
+ "files": {
+  "{{HOME}}/.claude/projects/-gone/legacy.jsonl": {
+   "p": "claude",
+   "r": [
+    [
+     1784073600000,
+     1,
+     "s4",
+     40,
+     0,
+     0,
+     10,
+     0,
+     "k7"
+    ]
+   ]
+  },
+  "{{HOME}}/.claude/projects/-gone/override.jsonl": {
+   "p": "claude",
+   "r": [
+    [
+     1790038802000,
+     0,
+     "s6",
+     99999,
+     0,
+     0,
+     1,
+     0,
+     "k9"
+    ]
+   ]
+  }
+ }
+}

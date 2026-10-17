@@ -1,0 +1,750 @@
+{
+  "days": [
+    {
+      "agent": "claude",
+      "day": "2026-07-15",
+      "model": "claude-opus-4-5",
+      "output": 10,
+      "tokens": 50
+    },
+    {
+      "agent": "codex",
+      "day": "2026-08-01",
+      "model": "gpt-5.5",
+      "output": 100,
+      "tokens": 1000
+    },
+    {
+      "agent": "codex",
+      "day": "2026-09-01",
+      "model": "gpt-5.3-codex",
+      "output": 200,
+      "tokens": 900
+    },
+    {
+      "agent": "grok",
+      "day": "2026-09-10",
+      "model": "gpt-5.5",
+      "output": 40,
+      "tokens": 100
+    },
+    {
+      "agent": "claude",
+      "day": "2026-09-20",
+      "model": "claude-opus-4-5",
+      "output": 25,
+      "tokens": 1175
+    },
+    {
+      "agent": "claude",
+      "day": "2026-09-21",
+      "model": "claude-opus-4-5",
+      "output": 54,
+      "tokens": 260
+    },
+    {
+      "agent": "claude",
+      "day": "2026-09-21",
+      "model": "claude-sonnet-4-5",
+      "output": 5,
+      "tokens": 15
+    },
+    {
+      "agent": "claude",
+      "day": "2026-09-22",
+      "model": "claude-opus-4-5",
+      "output": 1,
+      "tokens": 12
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-08",
+      "model": "grok-3",
+      "output": 30,
+      "tokens": 100
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-09",
+      "model": "claude-opus-4-5",
+      "output": 10,
+      "tokens": 515
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-10",
+      "model": "claude-haiku-4-5",
+      "output": 49,
+      "tokens": 667
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-10",
+      "model": "claude-opus-4-5",
+      "output": 5,
+      "tokens": 1115
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-10",
+      "model": "claude-sonnet-4-5",
+      "output": 3,
+      "tokens": 10
+    },
+    {
+      "agent": "codex",
+      "day": "2026-10-10",
+      "model": "gpt-5.5",
+      "output": 250,
+      "tokens": 3150
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-10",
+      "model": "grok-4",
+      "output": 100,
+      "tokens": 1100
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-10",
+      "model": "grok-code-fast",
+      "output": 50,
+      "tokens": 550
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-11",
+      "model": "<synthetic>",
+      "output": 5,
+      "tokens": 10
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-11",
+      "model": "claude-sonnet-4-5",
+      "output": 52,
+      "tokens": 685
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-11",
+      "model": "unknown",
+      "output": 1,
+      "tokens": 2
+    },
+    {
+      "agent": "codex",
+      "day": "2026-10-11",
+      "model": "gpt-5.4-mini",
+      "output": 10,
+      "tokens": 100
+    },
+    {
+      "agent": "codex",
+      "day": "2026-10-11",
+      "model": "gpt-5.5",
+      "output": 110,
+      "tokens": 5900
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-11",
+      "model": "grok-4",
+      "output": 20,
+      "tokens": 220
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-11",
+      "model": "grok-code-fast",
+      "output": 5,
+      "tokens": 15
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-12",
+      "model": "claude-opus-4-5",
+      "output": 14,
+      "tokens": 28
+    },
+    {
+      "agent": "claude",
+      "day": "2026-10-12",
+      "model": "claude-sonnet-4-5",
+      "output": 9,
+      "tokens": 10
+    },
+    {
+      "agent": "codex",
+      "day": "2026-10-12",
+      "model": "unknown",
+      "output": 10,
+      "tokens": 60
+    },
+    {
+      "agent": "grok",
+      "day": "2026-10-12",
+      "model": "unknown",
+      "output": 10,
+      "tokens": 40
+    }
+  ],
+  "full": true,
+  "label": "Fixture",
+  "machine": "fixture",
+  "repos": [
+    {
+      "day": "2026-09-01",
+      "repo": "site",
+      "tokens": 900
+    },
+    {
+      "day": "2026-10-08",
+      "repo": "my proj",
+      "tokens": 100
+    },
+    {
+      "day": "2026-10-09",
+      "repo": "blog",
+      "tokens": 515
+    },
+    {
+      "day": "2026-10-10",
+      "repo": "site",
+      "tokens": 3322
+    },
+    {
+      "day": "2026-10-10",
+      "repo": "t3-namer-xyz",
+      "tokens": 120
+    },
+    {
+      "day": "2026-10-10",
+      "repo": "webapp",
+      "tokens": 3150
+    },
+    {
+      "day": "2026-10-11",
+      "repo": "game",
+      "tokens": 325
+    },
+    {
+      "day": "2026-10-11",
+      "repo": "site",
+      "tokens": 5057
+    },
+    {
+      "day": "2026-10-11",
+      "repo": "webapp",
+      "tokens": 1550
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "game",
+      "tokens": 10
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "grokhelper",
+      "tokens": 40
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "helper",
+      "tokens": 60
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "misc",
+      "tokens": 10
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "scratch",
+      "tokens": 4
+    },
+    {
+      "day": "2026-10-12",
+      "repo": "web",
+      "tokens": 2
+    }
+  ],
+  "sessions": [
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "11111111-aaaa-4bbb-8ccc-000000000001",
+      "io": {
+        "cr": 1300,
+        "cw": 100,
+        "in": 43,
+        "out": 54
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-sonnet-4-5",
+      "parent": null,
+      "project": "site",
+      "repo": "site",
+      "state": "thinking",
+      "stateAt": 1791676860000,
+      "tokens": 1497
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Projects/game/.claude/worktrees/agent-1",
+      "id": "44444444-aaaa-4bbb-8ccc-000000000004",
+      "io": {
+        "cr": 300,
+        "cw": 10,
+        "in": 4,
+        "out": 21
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-sonnet-4-5",
+      "parent": null,
+      "project": "agent-1",
+      "repo": "game",
+      "state": "writing",
+      "stateAt": 1791774000000,
+      "tokens": 335
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/notes/misc",
+      "id": "55555555-aaaa-4bbb-8ccc-000000000005",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 4,
+        "out": 6
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-opus-4-5",
+      "parent": null,
+      "project": "misc",
+      "repo": "misc",
+      "state": "writing",
+      "stateAt": 1791766800000,
+      "tokens": 10
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/.t3/scratch/idea1",
+      "id": "66666666-aaaa-4bbb-8ccc-000000000006",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 3,
+        "out": 3
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-opus-4-5",
+      "parent": null,
+      "project": "idea1",
+      "repo": "scratch",
+      "state": "writing",
+      "stateAt": 1791770460000,
+      "tokens": 6
+    },
+    {
+      "agent": "claude",
+      "cwd": null,
+      "id": "77777777-aaaa-4bbb-8ccc-000000000007",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 6,
+        "out": 4
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-opus-4-5",
+      "parent": null,
+      "project": "-nocwd",
+      "repo": null,
+      "state": "writing",
+      "stateAt": 1791774060000,
+      "tokens": 10
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "88888888-aaaa-4bbb-8ccc-000000000008",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 264,
+        "out": 0
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "claude-haiku-4-5",
+      "parent": null,
+      "project": "site",
+      "repo": "site",
+      "state": "writing",
+      "stateAt": 1791633666000,
+      "tokens": 264
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "agent-ab12cd",
+      "io": {
+        "cr": 200,
+        "cw": 50,
+        "in": 4,
+        "out": 29
+      },
+      "kind": "subagent",
+      "lastActivity": "~now",
+      "model": "claude-haiku-4-5",
+      "parent": "11111111-aaaa-4bbb-8ccc-000000000001",
+      "project": "site",
+      "repo": "site",
+      "state": "writing",
+      "stateAt": 1791626730000,
+      "tokens": 283
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-Agent",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "delegate",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-AskUserQuestion",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "waiting",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-BashOutput",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "run",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-Bash",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "run",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-Edit",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "edit",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-ExitPlanMode",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "tool",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-NotebookEdit",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "edit",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-Read",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "read",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-Task",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "delegate",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-TodoWrite",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "edit",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-WebFetch",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "read",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-after-tool-result",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "thinking",
+      "stateAt": 1791781205000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-mcp__srv__do",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "tool",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-mcp__srv__list_tools",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "read",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-no-timestamp",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "run",
+      "stateAt": "~now",
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-thinking",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "thinking",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "claude",
+      "cwd": "{{HOME}}/Dev/kinds",
+      "id": "kind-writing",
+      "io": null,
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": null,
+      "parent": null,
+      "project": "kinds",
+      "repo": "kinds",
+      "state": "writing",
+      "stateAt": 1791781200000,
+      "tokens": 0
+    },
+    {
+      "agent": "codex",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "rollout-2026-10-10T10-00-00-019a0000-0000-7000-8000-00000000000a",
+      "io": {
+        "cr": 1900,
+        "cw": 20,
+        "in": 1090,
+        "out": 260
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "gpt-5.4-mini",
+      "parent": null,
+      "project": "site",
+      "repo": "site",
+      "state": "read",
+      "stateAt": 1791644530000,
+      "tokens": 4300
+    },
+    {
+      "agent": "codex",
+      "cwd": "{{HOME}}/.codex/worktrees/ab12/webapp",
+      "id": "rollout-2026-10-10T11-00-00-019a0000-0000-7000-8000-00000000000b",
+      "io": {
+        "cr": 150,
+        "cw": 0,
+        "in": 250,
+        "out": 100
+      },
+      "kind": "subagent",
+      "lastActivity": "~now",
+      "model": "gpt-5.5",
+      "parent": "rollout-2026-10-10T10-00-00-019a0000-0000-7000-8000-00000000000a",
+      "project": "webapp",
+      "repo": "webapp",
+      "state": "writing",
+      "stateAt": 1791630011000,
+      "tokens": 500
+    },
+    {
+      "agent": "codex",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "rollout-2026-10-11T03-00-00-019a0000-0000-7000-8000-00000000000c",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 40,
+        "out": 10
+      },
+      "kind": "subagent",
+      "lastActivity": "~now",
+      "model": "gpt-5.5",
+      "parent": null,
+      "project": "site",
+      "repo": "site",
+      "state": "run",
+      "stateAt": 1791687611000,
+      "tokens": 4350
+    },
+    {
+      "agent": "grok",
+      "cwd": "{{HOME}}/Dev/site",
+      "id": "g1000000-aaaa-4bbb-8ccc-000000000001",
+      "io": {
+        "cr": 604,
+        "cw": 50,
+        "in": 1106,
+        "out": 175
+      },
+      "kind": "main",
+      "lastActivity": "~now",
+      "model": "grok-4",
+      "parent": null,
+      "project": "site",
+      "repo": "site",
+      "state": "writing",
+      "stateAt": 1791676810500,
+      "tokens": 1885
+    }
+  ]
+}

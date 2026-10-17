@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u-2026-10-10T07:59:00.000Z","timestamp":"2026-10-10T07:59:00.000Z","cwd":"/tmp/t3-namer-xyz","sessionId":"s","message":{"role":"user","content":"name this thread"}}
+{"type":"assistant","timestamp":"2026-10-10T08:00:00.000Z","cwd":"/tmp/t3-namer-xyz","sessionId":"s","message":{"id":"msg_T1","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Thread name"}],"usage":{"input_tokens":100,"output_tokens":20}}}

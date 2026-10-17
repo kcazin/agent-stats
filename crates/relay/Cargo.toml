@@ -1,0 +1,9 @@
+[package]
+name = "agent-stats-relay"
+version = "0.4.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+agent-stats-common = { path = "../common" }
+serde_json = { version = "1.0.154", features = ["float_roundtrip"] }

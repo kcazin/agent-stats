@@ -1,0 +1,16 @@
+# Example Railway config for the relay (copy to railway.toml in the repo you deploy from).
+# Set PUBLISH_TOKEN as a service variable in the dashboard; never commit it.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/healthz"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+
+# Service variables (set in the dashboard, shown here for reference):
+#   PUBLISH_TOKEN = <the existing token, unchanged>
+#   ALLOWED_ORIGINS = https://kilcazn.com,https://www.kilcazn.com   # or CORS_ORIGINS
+#   RAILWAY_RUN_UID = 0            # the volume is root-owned; the image runs as uid 10001
+#   DATA_DIR      = /data          # the existing volume mount path

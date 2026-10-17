@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u-2026-10-09T04:59:00.000Z","timestamp":"2026-10-09T04:59:00.000Z","cwd":"{{HOME}}/.t3/worktrees/blog/feature-x","sessionId":"s","message":{"role":"user","content":"hello"}}
+{"type":"assistant","timestamp":"2026-10-09T05:00:00.000Z","cwd":"{{HOME}}/.t3/worktrees/blog/feature-x","sessionId":"s","message":{"id":"msg_B1","type":"message","role":"assistant","model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tu4","name":"Read","input":{}}],"usage":{"input_tokens":5,"cache_read_input_tokens":500,"output_tokens":10}}}

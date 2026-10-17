@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u-2026-10-12T05:00:00.000Z","timestamp":"2026-10-12T05:00:00.000Z","cwd":"{{HOME}}/Dev/kinds","sessionId":"s","message":{"role":"user","content":"hello"}}
+{"type":"assistant","timestamp":"2026-10-12T05:00:00.000Z","cwd":"{{HOME}}/Dev/kinds","sessionId":"s","message":{"type":"message","role":"assistant","content":[{"type":"tool_use","id":"tk","name":"Edit","input":{}}]}}

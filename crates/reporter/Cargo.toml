@@ -1,0 +1,26 @@
+[package]
+name = "agent-stats-reporter"
+version = "0.4.0"
+edition = "2021"
+description = "Reports agent token usage and live sessions to the agent-stats hub"
+publish = false
+
+[lib]
+name = "agent_stats_reporter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-stats-reporter"
+path = "src/main.rs"
+
+[dependencies]
+agent-stats-common = { path = "../common" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+rayon = "1"
+memchr = "2"
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always", "tz-system"] }
+ureq = "3"
+regex-lite = "0.1"
+libc = "0.2"
+toml = "0.9"

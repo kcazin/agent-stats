@@ -1,0 +1,159 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: v
+        name: Tag must match the workspace version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          crate=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "agent-stats") | .version')
+          if [ "$version" != "$crate" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the agent-stats crate version $crate" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release -p agent-stats --target ${{ matrix.target }}
+      - name: Package
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          name="agent-stats-${VERSION}-${{ matrix.target }}"
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/agent-stats" dist/agent-stats
+          tar -czf "$name.tar.gz" -C dist agent-stats
+          # Smoke test the packaged binary. x86_64-apple-darwin is cross-compiled on an arm64 runner, so it is skipped.
+          if [ "${{ matrix.target }}" = x86_64-apple-darwin ]; then
+            echo "skipping version smoke test for cross-compiled ${{ matrix.target }}"
+          else
+            ./dist/agent-stats version
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: agent-stats-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: SHA256SUMS
+        working-directory: assets
+        run: |
+          ls -l
+          sha256sum agent-stats-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            assets/agent-stats-*.tar.gz
+            assets/SHA256SUMS
+          generate_release_notes: true
+
+  relay:
+    # Redeploys the public relay on Railway from the tagged commit. No-op without the RAILWAY_TOKEN secret.
+    needs: [check, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # A Railway *project* token (scoped to one environment), so no --environment flag is needed.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_SERVICE: ${{ vars.RAILWAY_RELAY_SERVICE || 'relay' }}
+      RELAY_URL: ${{ vars.RELAY_URL }}
+      VERSION: ${{ needs.check.outputs.version }}
+      RAILWAY_CLI_VERSION: "5.70.0"
+    steps:
+      - id: gate
+        name: Railway token configured?
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::notice::RAILWAY_TOKEN is not set; skipping the relay deploy (see docs/deploy.md, Automatic relay deploys)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - if: steps.gate.outputs.enabled == 'true'
+        name: Install the Railway CLI
+        run: npm install --global "@railway/cli@${RAILWAY_CLI_VERSION}" && railway --version
+      - if: steps.gate.outputs.enabled == 'true'
+        name: Deploy
+        run: |
+          cp railway.toml.example railway.toml
+          railway up --ci --service "$RAILWAY_SERVICE"
+      - if: steps.gate.outputs.enabled == 'true'
+        name: Wait for the new version to answer
+        run: |
+          if [ -z "$RELAY_URL" ]; then
+            echo "::notice::RELAY_URL variable is not set; skipping the post-deploy check."
+            exit 0
+          fi
+          base="https://${RELAY_URL#https://}"
+          base="${base%/}"
+          deadline=$((SECONDS + 300))
+          until [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$base/healthz")" = 200 ]; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::$base/healthz did not answer 200 within 5 minutes"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "healthz answers 200"
+          # `railway up --ci` returns when the build finishes; the previous deployment can still serve until the new one is healthy,
+          # so keep polling the descriptor until it reports the tag's version.
+          while true; do
+            found=$(curl -fsS --max-time 10 "$base/.well-known/agent-stats" | jq -r '.version // empty' || true)
+            echo "relay reports version '${found}', want '${VERSION}'"
+            [ "$found" = "$VERSION" ] && break
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::relay still reports '${found}' instead of ${VERSION}"
+              exit 1
+            fi
+            sleep 5
+          done

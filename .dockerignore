@@ -1,0 +1,8 @@
+target/
+.git/
+legacy/
+tests/
+docs/
+**/node_modules/
+*.md
+!README.md

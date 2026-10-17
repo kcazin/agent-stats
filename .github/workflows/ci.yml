@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release --workspace
+      - name: Golden payloads
+        run: |
+          node tests/golden/golden.mjs --ticks 2
+          node tests/golden/golden.mjs --cmd target/release/agent-stats-reporter --expected expected-rs --ticks 2
+          node tests/golden/golden.mjs --cmd "target/release/agent-stats report" --expected expected-rs --ticks 2
+      - name: Hub parity with the JS hub
+        run: node tests/hub-parity/parity.mjs --rust target/release/agent-stats

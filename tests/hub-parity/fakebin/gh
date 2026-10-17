@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+// Fake `gh` for the parity harness: only answers `gh api graphql -f query=... -f u=parity-user`.
+const a = process.argv.slice(2);
+if (a.length !== 6 || a[0] !== 'api' || a[1] !== 'graphql' || a[2] !== '-f' || !a[3].startsWith('query=') ||
+    a[4] !== '-f' || !a[5].startsWith('u=')) { console.error('fake gh: unexpected argv', JSON.stringify(a)); process.exit(1); }
+if (a[5] !== 'u=parity-user') { console.error('fake gh: could not resolve to a User with the login of', a[5]); process.exit(1); }
+const days = [];
+for (let t = Date.UTC(2025, 9, 1), i = 0; t <= Date.UTC(2026, 9, 20); t += 86_400_000, i++)
+  days.push({ date: new Date(t).toISOString().slice(0, 10), contributionCount: i % 5 === 0 ? 0 : (i * 37 + (i >> 3)) % 17 });
+const weeks = [];
+for (let i = 0; i < days.length; i += 7) weeks.push({ contributionDays: days.slice(i, i + 7) });
+process.stdout.write(JSON.stringify({ data: { user: { contributionsCollection: { contributionCalendar: { weeks } } } } }));

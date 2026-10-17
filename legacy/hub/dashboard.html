@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent stats</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface: #0b0b0b; --panel: #151514; --line: #2a2a28;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8a8980;
+    --accent: #e5482d;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --good: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  h2 { font-size: 13px; font-weight: 500; color: var(--text-2); margin: 0 0 12px; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .meta b { font-weight: 500; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .kpi, .panel { background: var(--panel); border-radius: 8px; padding: 16px; }
+  .kpi dt { color: var(--muted); font-size: 12px; }
+  .kpi dd { margin: 4px 0 0; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .kpi dd small { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; animation: pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  svg { display: block; width: 100%; overflow: visible; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .axis line { stroke: var(--line); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .bars { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .bars .track { height: 10px; }
+  .bars .fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 2px; }
+  .bars .v { color: var(--text-2); font-variant-numeric: tabular-nums; text-align: right; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+  td.dim { color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .status.working::before { background: var(--accent); }
+  .status.online::before { background: var(--good); }
+  .tip { position: fixed; pointer-events: none; background: #000; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; }
+  .tip span { color: var(--muted); }
+  .err { color: #e66767; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Agent stats</h1>
+    <div class="meta" id="meta">Loading…</div>
+  </header>
+
+  <dl class="kpis">
+    <div class="kpi"><dt><span class="live-dot"></span>Agents working now</dt><dd id="k-working">–</dd></div>
+    <div class="kpi"><dt>Open sessions (30 min)</dt><dd id="k-open">–</dd></div>
+    <div class="kpi"><dt>Tokens today</dt><dd id="k-today">–</dd></div>
+    <div class="kpi"><dt>Tokens, last 7 days</dt><dd id="k-week">–</dd></div>
+    <div class="kpi"><dt>Tokens, all time</dt><dd id="k-all">–</dd></div>
+    <div class="kpi"><dt>Machines online</dt><dd id="k-machines">–</dd></div>
+  </dl>
+
+  <div class="grid">
+    <section class="panel"><h2>Agents working, last 24 hours (peak per 10 min)</h2><svg id="c-history" height="160"></svg></section>
+    <section class="panel"><h2>Tokens today by model</h2><div class="bars" id="c-models"></div></section>
+  </div>
+
+  <section class="panel" style="margin-bottom:12px">
+    <h2>Daily tokens by machine, last 90 days</h2>
+    <div class="legend" id="c-daily-legend"></div>
+    <svg id="c-daily" height="200"></svg>
+  </section>
+
+  <section class="panel" style="margin-bottom:12px">
+    <h2>Machines</h2>
+    <div class="scroll"><table id="t-machines"></table></div>
+  </section>
+
+  <section class="panel">
+    <h2>Sessions</h2>
+    <div class="scroll"><table id="t-sessions"></table></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const compact = n => n >= 1e9 ? (n / 1e9).toFixed(n >= 1e11 ? 0 : 1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n);
+const ago = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const SERIES = ['--s1', '--s2', '--s3', '--s4'];
+const NS = 'http://www.w3.org/2000/svg';
+
+const tip = document.createElement('div');
+tip.className = 'tip'; tip.hidden = true; document.body.append(tip);
+const showTip = (html, x, y) => { tip.innerHTML = html; tip.hidden = false; tip.style.left = x + 'px'; tip.style.top = y + 'px'; };
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  parent?.append(e);
+  return e;
+}
+
+// Agents working: step area with a crosshair.
+function history(svg, points) {
+  svg.replaceChildren();
+  const W = svg.clientWidth, H = 160, L = 28, B = 20, max = Math.max(2, ...points.map(p => p.working));
+  const x = i => L + (i / (points.length - 1)) * (W - L), y = v => (H - B) - (v / max) * (H - B - 8);
+  const axis = el('g', { class: 'axis' }, svg);
+  for (const v of [0, Math.ceil(max / 2), max]) {
+    el('line', { x1: L, x2: W, y1: y(v), y2: y(v) }, axis);
+    el('text', { x: L - 8, y: y(v) + 4, 'text-anchor': 'end' }, axis).textContent = v;
+  }
+  const fmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
+  for (let i = 0; i < points.length; i += 36) el('text', { x: x(i), y: H - 4, 'text-anchor': 'middle' }, axis).textContent = fmt.format(points[i].at);
+  let d = `M${x(0)},${y(0)}`;
+  points.forEach((p, i) => { d += `L${x(i)},${y(p.working)}`; if (i < points.length - 1) d += `L${x(i + 1)},${y(p.working)}`; });
+  el('path', { d: d + `L${x(points.length - 1)},${y(0)}Z`, fill: 'var(--accent)', 'fill-opacity': .18 }, svg);
+  el('path', { d: d.replace(/^M[^L]+/, `M${x(0)},${y(points[0].working)}`), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2 }, svg);
+  const cross = el('line', { y1: 0, y2: H - B, stroke: 'var(--text-2)', 'stroke-width': 1, visibility: 'hidden' }, svg);
+  svg.onpointermove = e => {
+    const r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(points.length - 1, Math.round((e.clientX - r.left - L) / (W - L) * (points.length - 1))));
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+    showTip(`<b>${points[i].working}</b> working <span>· ${fmt.format(points[i].at)}</span>`, r.left + x(i), r.top + y(points[i].working));
+  };
+  svg.onpointerleave = () => { cross.setAttribute('visibility', 'hidden'); tip.hidden = true; };
+}
+
+// Daily tokens: stacked bars, one colour per machine, 2px gaps between segments.
+function daily(svg, days, machines) {
+  svg.replaceChildren();
+  const keys = [];
+  for (let i = 89; i >= 0; i--) keys.push(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(Date.now() - i * 864e5));
+  const W = svg.clientWidth, H = 200, L = 44, B = 20, totals = keys.map(k => Object.values(days[k] || {}).reduce((a, b) => a + b, 0));
+  const max = Math.max(1, ...totals), bw = (W - L) / keys.length;
+  const y = v => (H - B) - (v / max) * (H - B - 8);
+  const axis = el('g', { class: 'axis' }, svg);
+  for (const v of [0, max / 2, max]) {
+    el('line', { x1: L, x2: W, y1: y(v), y2: y(v) }, axis);
+    el('text', { x: L - 8, y: y(v) + 4, 'text-anchor': 'end' }, axis).textContent = compact(Math.round(v));
+  }
+  keys.forEach((k, i) => {
+    if (i % 15 === 0) el('text', { x: L + i * bw + bw / 2, y: H - 4, 'text-anchor': 'middle' }, axis).textContent = k.slice(5);
+    let base = 0;
+    machines.forEach((m, j) => {
+      const v = days[k]?.[m] || 0;
+      if (!v) return;
+      const top = y(base + v), h = y(base) - top - (base ? 2 : 0);
+      if (h > 0) el('rect', { x: L + i * bw + 1, y: top, width: Math.max(1, bw - 2), height: h, rx: 1.5, fill: `var(${SERIES[j % 4]})` }, svg);
+      base += v;
+    });
+    const hit = el('rect', { x: L + i * bw, y: 0, width: bw, height: H - B, fill: 'transparent' }, svg);
+    hit.onpointerenter = () => {
+      const r = hit.getBoundingClientRect();
+      const rows = machines.filter(m => days[k]?.[m]).map(m => `<span>${esc(m)}</span> ${compact(days[k][m])}`).join('<br>');
+      showTip(`<b>${compact(totals[i])}</b> <span>· ${k}</span>${rows ? '<br>' + rows : ''}`, r.left + r.width / 2, r.top + y(totals[i]));
+    };
+    hit.onpointerleave = () => { tip.hidden = true; };
+  });
+  $('c-daily-legend').innerHTML = machines.map((m, j) => `<span><i style="background:var(${SERIES[j % 4]})"></i>${esc(m)}</span>`).join('');
+}
+
+function bars(node, list) {
+  const max = Math.max(1, ...list.map(r => r.tokens));
+  node.innerHTML = list.length ? list.map(r =>
+    `<span>${esc(r.name)}</span><div class="track"><div class="fill" style="width:${(r.tokens / max) * 100}%"></div></div><span class="v">${compact(r.tokens)}</span>`).join('')
+    : '<span class="dim">Nothing yet today</span>';
+}
+
+function render(s) {
+  $('k-working').innerHTML = `${s.working}${s.subagents ? `<small>+${s.subagents} subagents</small>` : ''}`;
+  $('k-open').textContent = s.open;
+  $('k-today').textContent = compact(s.today.tokens);
+  $('k-week').textContent = compact(s.week);
+  $('k-all').innerHTML = `${compact(s.allTime)}<small>since ${s.firstDay ? new Date(s.firstDay).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '–'}</small>`;
+  const online = s.machines.filter(m => m.online).length;
+  $('k-machines').innerHTML = `${online}<small>of ${s.machines.length}</small>`;
+  const p = s.publish;
+  $('meta').innerHTML = `Updated ${new Date(s.now).toLocaleTimeString()} · ` + (!p.url ? 'Publishing off'
+    : p.lastError ? `<span class="err">Publish failed: ${esc(p.lastError)}</span>`
+    : p.lastOk ? `Published to site ${ago(s.now - p.lastOk)}` : 'Not published yet');
+
+  history($('c-history'), s.history);
+  const names = s.machines.map(m => m.label);
+  daily($('c-daily'), s.daily, names);
+  bars($('c-models'), s.today.byModel);
+
+  $('t-machines').innerHTML = `<tr><th>Machine</th><th>Status</th><th>Last report</th><th class="num">Working</th><th class="num">Tokens today</th></tr>` +
+    s.machines.map(m => `<tr><td>${esc(m.label)} <span class="dim">${esc(m.platform)}</span></td>
+      <td><span class="status ${m.online ? 'online' : ''}">${m.online ? 'Online' : 'Offline'}</span></td>
+      <td class="dim">${ago(s.now - m.lastSeen)}</td><td class="num">${m.working}</td><td class="num">${compact(m.tokensToday)}</td></tr>`).join('');
+
+  $('t-sessions').innerHTML = `<tr><th>Status</th><th>Machine</th><th>Agent</th><th>Project</th><th>Model</th><th>Last write</th><th class="num">Tokens</th></tr>` +
+    (s.sessions.length ? s.sessions.map(x => `<tr>
+      <td><span class="status ${x.working ? 'working' : ''}">${x.working ? 'Working' : 'Open'}</span></td>
+      <td>${esc(x.machine)}</td><td>${{ claude: 'Claude Code', codex: 'Codex', grok: 'Grok' }[x.agent] || esc(x.agent)}${x.kind === 'subagent' ? ' <span class="dim">subagent</span>' : ''}</td>
+      <td title="${esc(x.cwd)}">${esc(x.project)}</td><td class="dim">${esc(x.model)}</td>
+      <td class="dim">${ago(s.now - x.lastActivity)}</td><td class="num">${compact(x.tokens)}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="dim">No sessions in the last 30 minutes</td></tr>');
+}
+
+async function load() {
+  try { render(await (await fetch('/api/state')).json()); }
+  catch (err) { $('meta').innerHTML = `<span class="err">Hub unreachable: ${esc(err.message)}</span>`; }
+}
+load();
+setInterval(() => { if (!document.hidden) load(); }, 5000);
+addEventListener('resize', load);
+</script>
+</body>
+</html>

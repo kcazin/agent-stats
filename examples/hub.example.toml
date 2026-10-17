@@ -1,0 +1,47 @@
+# A hub on an always-on machine at home, reached over Tailscale. Copy to ~/.config/agent-stats/hub.toml and edit.
+# Every key is described in docs/ARCHITECTURE.md (hub.toml).
+
+name = "home"
+# The machine's Tailscale IPv4 (`tailscale ip -4`). 127.0.0.1:7777 for a hub only this machine reports to.
+listen = "100.101.102.103:7777"
+# The IANA zone that sets day boundaries; reporters must use the same one.
+timezone = "Europe/London"
+# A website reads a relay (below), not the hub.
+public = false
+cors_origins = []
+# Optional: your GitHub contributions in the payload (`gh api graphql`, hourly).
+github_user = ""
+new_repo_webhook = ""
+# Routes reporters try in order. The tailnet IP first: it is stable and only this machine has it, while a bare
+# hostname like my-hub can resolve to another host on another network (reporters skip a route whose hubId doesn't
+# match, but needn't try it first). The name second, for when the IP changes.
+advertise = ["http://100.101.102.103:7777", "http://my-hub:7777"]
+# Tailscale (CGNAT v4 and ULA v6 ranges): your other machines may open the dashboard, /api/state and /api/repos like
+# loopback does. Read-only routes only; /report still needs a token. Matched on the TCP peer.
+trusted_networks = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
+
+# Optional: publish public totals to a relay (docs/deploy.md). The token goes in ~/.config/agent-stats/publish_token.
+[[publish]]
+name = "relay"
+url = "https://relay.example.com/publish"
+token_file = "publish_token"
+timeout_secs = 10
+
+# First match wins. Globs are case-insensitive and match the whole string. A glob without "/" matches the repo name
+# only; one with "/" (github.com/me/*) matches the normalized git remote. Unmatched repos count as `other`.
+[[project]]
+key = "game"
+name = "My Game"
+color = "#e2502b"
+match = ["my-game*", "*-engine"]
+
+[[project]]
+key = "site"
+name = "Website"
+color = "#3987e5"
+match = ["github.com/me/site*"]
+
+# Tokens no repository accounts for (deleted transcripts, the T3 Code usage cache import). Default: other = 1.
+[unattributed]
+game = 0.5
+other = 0.5

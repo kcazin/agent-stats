@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u-2026-10-12T00:59:00.000Z","timestamp":"2026-10-12T00:59:00.000Z","cwd":"{{HOME}}/notes/misc","sessionId":"s","message":{"role":"user","content":"hello"}}
+{"type":"assistant","timestamp":"2026-10-12T01:00:00.000Z","cwd":"{{HOME}}/notes/misc","sessionId":"s","message":{"id":"msg_M1","type":"message","role":"assistant","model":"claude-opus-4-5","content":[{"type":"text","text":"note"}],"usage":{"input_tokens":4,"output_tokens":6}}}
