@@ -586,7 +586,10 @@ fn status(_args: &[String]) -> ExitCode {
     let path = status_path("report");
     let Some(st) = read_status("report") else {
         println!("No reporter status at {}: the reporter is not running here (or never ran).", path.display());
-        println!("Start it with `agent-stats service install report`, or run `agent-stats doctor`.");
+        match agent_stats_common::managed_by() {
+            Some(app) => println!("{app} runs it: open {app}, or run `agent-stats doctor`."),
+            None => println!("Start it with `agent-stats service install report`, or run `agent-stats doctor`."),
+        }
         return ExitCode::from(1);
     };
     let alive = pid_alive(st.pid);
@@ -823,17 +826,22 @@ fn doctor(_args: &[String]) -> ExitCode {
     }
 
     println!("service");
+    let managed = agent_stats_common::managed_by();
+    if let Some(app) = &managed {
+        r.ok(&format!("part of {app}, which runs and updates it"));
+    }
+    let start = managed.as_ref().map_or("agent-stats service install report".to_owned(), |a| format!("open {a}"));
     match read_status("report") {
         None => r.fail(
             &format!("no status file at {}: the reporter is not running", status_path("report").display()),
-            "agent-stats service install report",
+            &start,
         ),
         Some(st) => {
             let age = now_secs().saturating_sub(st.heartbeat_at);
             if !pid_alive(st.pid) {
                 r.fail(
                     &format!("reporter pid {} is not running (last heartbeat {})", st.pid, ago(Some(st.heartbeat_at))),
-                    "agent-stats service install report (or restart the service)",
+                    &format!("{start} (or restart the service)"),
                 );
             } else if age > 2 * HEARTBEAT_SECS + 15 {
                 r.fail(

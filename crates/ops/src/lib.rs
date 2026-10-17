@@ -140,9 +140,32 @@ impl Ctx {
     }
 }
 
+/// What `cmd` does when an app ships this binary: `None` to go ahead (`service status`), else the exit code after
+/// saying why it doesn't. The app's own updates replace the binary, and the app runs the services.
+fn managed(app: &str, cmd: &str, args: &[String]) -> Option<ExitCode> {
+    let sub = args.first().map(String::as_str);
+    let msg = match (cmd, sub) {
+        ("service", Some("status")) | ("service", None) => return None,
+        // The updater timer of an install made before the app took over: nothing to do, and not a failure.
+        ("update", Some("--auto")) => {
+            println!("agent-stats here is part of {app}, which updates it; nothing to do");
+            return Some(ExitCode::SUCCESS);
+        }
+        ("update", _) | ("rollback", _) => format!("agent-stats here is part of {app}: update {app} instead"),
+        _ => format!("agent-stats here is part of {app}, which runs its services: use {app}'s settings instead"),
+    };
+    let _ = writeln!(std::io::stderr(), "agent-stats {cmd}: {msg}");
+    Some(ExitCode::from(1))
+}
+
 /// `agent-stats <service|update|rollback> [args]`; `cmd` is the first word.
 pub fn main(cmd: &str, args: &[String]) -> ExitCode {
     let ctx = Ctx::from_env();
+    if let Some(app) = agent_stats_common::managed_by() {
+        if let Some(r) = managed(&app, cmd, args) {
+            return r;
+        }
+    }
     let r = match cmd {
         "service" => service::cli(&ctx, args),
         "update" => update::cli(&ctx, args),

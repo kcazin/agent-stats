@@ -41,6 +41,25 @@ pub fn data_dir() -> PathBuf {
     env_dir("XDG_DATA_HOME").unwrap_or_else(|| home().join(".local").join("share")).join("agent-stats")
 }
 
+/// The app this binary belongs to, when an app ships it: `AGENT_STATS_MANAGED_BY`, or the bundle it runs from
+/// (`Tokiscope` for `…/Tokiscope.app/Contents/Helpers/agent-stats`). That app installs, runs and updates it, so
+/// `update`, `rollback` and `service` leave it alone.
+pub fn managed_by() -> Option<String> {
+    if let Some(app) = std::env::var("AGENT_STATS_MANAGED_BY").ok().filter(|v| !v.trim().is_empty()) {
+        return Some(app);
+    }
+    let exe = std::env::current_exe().ok()?;
+    app_of(&exe.canonicalize().unwrap_or(exe))
+}
+
+/// The app bundle a path is inside: `X` for a path under `X.app/Contents/`.
+pub fn app_of(path: &Path) -> Option<String> {
+    let parts: Vec<_> = path.components().map(|c| c.as_os_str().to_string_lossy()).collect();
+    parts.windows(2).rev().find_map(|w| {
+        (w[1] == "Contents").then(|| w[0].strip_suffix(".app").filter(|n| !n.is_empty()).map(str::to_owned)).flatten()
+    })
+}
+
 /// Writes `bytes` to `path` atomically: unique temp file in the same directory (created exclusively, mode set before
 /// any data is written), fsync, rename, fsync the directory.
 pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
@@ -263,6 +282,24 @@ pub fn rotate_log(path: &Path, max_bytes: u64, keep: usize) {
         let _ = fs::rename(numbered(n), numbered(n + 1));
     }
     let _ = fs::rename(path, numbered(1));
+}
+
+#[cfg(test)]
+mod managed_tests {
+    use super::*;
+
+    #[test]
+    fn app_bundles() {
+        let app = |p: &str| app_of(Path::new(p));
+        assert_eq!(app("/Applications/Tokiscope.app/Contents/Helpers/agent-stats").as_deref(), Some("Tokiscope"));
+        assert_eq!(
+            app("/Users/me/My Tools/Tokiscope Beta.app/Contents/MacOS/agent-stats").as_deref(),
+            Some("Tokiscope Beta")
+        );
+        assert_eq!(app("/Users/me/.local/share/agent-stats/versions/0.5.0/agent-stats"), None);
+        assert_eq!(app("/Users/me/Dev/x.app/agent-stats"), None, "not inside Contents");
+        assert_eq!(app("/opt/.app/Contents/agent-stats"), None);
+    }
 }
 
 #[cfg(test)]
