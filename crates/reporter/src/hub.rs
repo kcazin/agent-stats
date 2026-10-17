@@ -69,6 +69,9 @@ pub struct Descriptor {
     pub version: Option<String>,
     #[serde(default)]
     pub protocol: Option<u32>,
+    /// The zone the hub counts days in (hubs before 0.5 don't say).
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// A response body, shortened for messages.
@@ -187,6 +190,9 @@ pub struct PairResponse {
     pub token: String,
     #[serde(default)]
     pub routes: Vec<String>,
+    /// The zone the hub counts days in (hubs before 0.5 don't say).
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// `POST <url>/pair`: swaps a pairing code for this machine's token.

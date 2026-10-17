@@ -178,7 +178,17 @@ impl Config {
     }
 
     fn from_raw(paths: &Paths, raw: Raw, from_file: bool) -> Result<Config, String> {
-        let tz_name = raw.timezone.unwrap_or_else(|| "Asia/Tokyo".into());
+        // Unset: this machine's zone, or Asia/Tokyo without a hub.toml (the JS hub's environment, which hard-coded it).
+        let tz_name = raw.timezone.filter(|t| !t.is_empty()).unwrap_or_else(|| {
+            if from_file {
+                jiff::tz::TimeZone::try_system()
+                    .ok()
+                    .and_then(|z| z.iana_name().map(str::to_owned))
+                    .unwrap_or_else(|| "UTC".into())
+            } else {
+                "Asia/Tokyo".into()
+            }
+        });
         let tz = jiff::tz::TimeZone::get(&tz_name).map_err(|e| format!("timezone {tz_name:?}: {e}"))?;
         let listen = raw.listen.unwrap_or_else(|| {
             format!(

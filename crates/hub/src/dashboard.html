@@ -145,7 +145,8 @@ function history(svg, points) {
 function daily(svg, days, machines) {
   svg.replaceChildren();
   const keys = [];
-  for (let i = 89; i >= 0; i--) keys.push(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(Date.now() - i * 864e5));
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: S.timezone || 'UTC' });
+  for (let i = 89; i >= 0; i--) keys.push(day.format(Date.now() - i * 864e5));
   const W = svg.clientWidth, H = 200, L = 44, B = 20, totals = keys.map(k => Object.values(days[k] || {}).reduce((a, b) => a + b, 0));
   const max = Math.max(1, ...totals), bw = (W - L) / keys.length;
   const y = v => (H - B) - (v / max) * (H - B - 8);

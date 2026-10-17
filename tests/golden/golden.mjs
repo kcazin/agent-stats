@@ -117,6 +117,8 @@ function run() {
   return new Promise(resolve => {
     const p = spawn('sh', ['-c', `${CMD} --once`], { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'], env: {
       ...process.env, HOME, HUB_URL: `http://127.0.0.1:${port}`, HUB_TOKEN: 'test', STATS_MACHINE: 'fixture', STATS_LABEL: 'Fixture', XDG_STATE_HOME: STATE,
+      // The JS reporter always counts in Asia/Tokyo; the Rust one defaults to this machine's zone.
+      STATS_TZ: 'Asia/Tokyo',
       // Never read the real config: the fake HOME's config dir is empty, so only the env hub above exists.
       AGENT_STATS_CONFIG_DIR: join(HOME, '.config', 'agent-stats'), XDG_CONFIG_HOME: join(HOME, '.config'), XDG_DATA_HOME: join(HOME, '.local', 'share') } });
     let out = '';

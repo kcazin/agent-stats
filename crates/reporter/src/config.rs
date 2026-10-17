@@ -10,7 +10,13 @@ use std::path::{Path, PathBuf};
 pub const LEGACY_DEFAULT_URL: &str = "http://mac-mini:7777";
 /// The name of the hub the legacy environment defines.
 pub const LEGACY_NAME: &str = "default";
-pub const DEFAULT_TZ: &str = "Asia/Tokyo";
+/// The zone the JS reporter always counted in: a machine that ran it keeps counting there unless told otherwise.
+pub const JS_TZ: &str = "Asia/Tokyo";
+
+/// This machine's IANA zone, else UTC.
+pub fn system_tz() -> String {
+    jiff::tz::TimeZone::try_system().ok().and_then(|z| z.iana_name().map(str::to_owned)).unwrap_or_else(|| "UTC".into())
+}
 
 /// config.toml as written on disk. Unknown keys are ignored (and dropped when `join` rewrites the file).
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
@@ -90,6 +96,8 @@ pub struct Settings {
     pub machine: String,
     pub label: String,
     pub tz_name: String,
+    /// Where `tz_name` comes from: `STATS_TZ`, `config.toml`, `state` (the zone existing counts are in) or `system`.
+    pub tz_from: &'static str,
     pub hubs: Vec<Hub>,
     pub config_file: PathBuf,
     /// config.toml as read (empty when there is none).
@@ -159,7 +167,26 @@ fn env(name: &str) -> Option<String> {
 pub fn load() -> Result<Settings, String> {
     let file = config_file();
     let cfg = read_file(&file)?;
-    Ok(resolve(cfg, file, &config_dir(), &env))
+    let mut s = resolve(cfg, file, &config_dir(), &env);
+    if s.tz_from == "system" {
+        if let Some(tz) = counted_in(&agent_stats_common::state_dir()) {
+            (s.tz_name, s.tz_from) = (tz, "state");
+        }
+    }
+    Ok(s)
+}
+
+/// The zone this machine's existing counts are in, so a timezone left unset keeps meaning what it meant: the
+/// reporter state's, or the JS reporter's fixed zone when only its state is there.
+pub fn counted_in(state_dir: &Path) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Tz {
+        tz: String,
+    }
+    match std::fs::read_to_string(state_dir.join("reporter-state.json")) {
+        Ok(s) => serde_json::from_str::<Tz>(&s).ok().map(|t| t.tz).filter(|t| !t.is_empty()),
+        Err(_) => state_dir.join("state.json").exists().then(|| JS_TZ.to_owned()),
+    }
 }
 
 /// Combines config.toml with the environment. Environment variables win over the file (an existing service unit
@@ -172,9 +199,11 @@ pub fn resolve(file: FileConfig, config_file: PathBuf, dir: &Path, env: &dyn Fn(
             h.strip_suffix(".local").map(str::to_owned).unwrap_or(h)
         });
     let label = env("STATS_LABEL").or_else(|| file.label.clone().filter(|l| !l.is_empty())).unwrap_or(machine.clone());
-    let tz_name = env("STATS_TZ")
-        .or_else(|| file.timezone.clone().filter(|t| !t.is_empty()))
-        .unwrap_or_else(|| DEFAULT_TZ.into());
+    let (tz_name, tz_from) = match (env("STATS_TZ"), file.timezone.clone().filter(|t| !t.is_empty())) {
+        (Some(t), _) => (t, "STATS_TZ"),
+        (None, Some(t)) => (t, "config.toml"),
+        (None, None) => (system_tz(), "system"),
+    };
     let mut roots = Roots::under(&home_dir);
     if let Some(d) = env("CLAUDE_CONFIG_DIR") {
         roots.claude_projects = PathBuf::from(d).join("projects");
@@ -218,7 +247,7 @@ pub fn resolve(file: FileConfig, config_file: PathBuf, dir: &Path, env: &dyn Fn(
             hubs.insert(0, Hub { name: name.into(), id: None, routes: vec![url], token, token_source, legacy: true });
         }
     }
-    Settings { home: home_dir.to_string_lossy().into_owned(), roots, machine, label, tz_name, hubs, config_file, file }
+    Settings { home: home_dir.to_string_lossy().into_owned(), roots, machine, label, tz_name, tz_from, hubs, config_file, file }
 }
 
 #[cfg(test)]
@@ -294,13 +323,24 @@ routes = ["https://stats.example.com"]
     }
 
     #[test]
+    fn unset_timezone_keeps_the_zone_existing_counts_are_in() {
+        let d = crate::ingest::tests::tmpdir("counted-in");
+        assert_eq!(counted_in(&d), None, "nothing counted yet: the system zone applies");
+        std::fs::write(d.join("state.json"), "{}").unwrap();
+        assert_eq!(counted_in(&d).as_deref(), Some(JS_TZ), "only the JS reporter's state");
+        std::fs::write(d.join("reporter-state.json"), r#"{"v":1,"tz":"Europe/Paris"}"#).unwrap();
+        assert_eq!(counted_in(&d).as_deref(), Some("Europe/Paris"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn legacy_env_defines_an_implicit_hub() {
         let d = crate::ingest::tests::tmpdir("legacy");
         let cf = d.join("config.toml");
         // Nothing configured: no hub.
         let s = resolve(FileConfig::default(), cf.clone(), &d, &envf(&[("HOME", "/h")]));
         assert!(s.hubs.is_empty());
-        assert_eq!(s.tz_name, DEFAULT_TZ);
+        assert_eq!((s.tz_name, s.tz_from), (system_tz(), "system"));
         // HUB_URL + HUB_TOKEN, as the golden tests and existing service units run it.
         let s = resolve(
             FileConfig::default(),

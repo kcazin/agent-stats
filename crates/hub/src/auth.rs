@@ -270,13 +270,14 @@ pub fn read_or_create(path: &Path, bytes: usize, secret: bool) -> std::io::Resul
     }
 }
 
-/// `{"hubId", "name", "token", "routes"}`
-pub fn pair_answer(hub_id: &str, name: &str, token: &str, routes: &[String]) -> J {
+/// `{"hubId", "name", "token", "routes", "timezone"}`
+pub fn pair_answer(hub_id: &str, name: &str, token: &str, routes: &[String], timezone: &str) -> J {
     Obj::new()
         .with("hubId", hub_id)
         .with("name", name)
         .with("token", token)
         .with("routes", J::Arr(routes.iter().map(|r| J::Str(r.clone())).collect()))
+        .with("timezone", timezone)
         .into()
 }
 

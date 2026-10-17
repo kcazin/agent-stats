@@ -482,7 +482,8 @@ impl Hub {
                 );
                 Response::json(
                     200,
-                    crate::auth::pair_answer(&self.hub_id, &self.cfg.name, &token, &self.cfg.routes()).stringify(),
+                    crate::auth::pair_answer(&self.hub_id, &self.cfg.name, &token, &self.cfg.routes(), &self.cfg.tz_name)
+                        .stringify(),
                 )
             }
             Err(crate::auth::PairError::BadCode) => {
@@ -944,7 +945,8 @@ impl Hub {
                         .with("name", self.cfg.name.as_str())
                         .with("version", agent_stats_common::VERSION)
                         .with("protocol", agent_stats_common::PROTOCOL as i64)
-                        .with("routes", J::Arr(self.cfg.routes().into_iter().map(J::Str).collect())),
+                        .with("routes", J::Arr(self.cfg.routes().into_iter().map(J::Str).collect()))
+                        .with("timezone", self.cfg.tz_name.as_str()),
                 )
                 .stringify(),
             ),

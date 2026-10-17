@@ -320,6 +320,17 @@ fn join(args: &[String]) -> ExitCode {
         );
     }
     println!("  routes: {}", entry.routes.join(", "));
+    match res.timezone.as_deref() {
+        Some(tz) if j.adopted => println!("  timezone: {tz} (the hub's)"),
+        Some(tz) if tz != settings.tz_name => println!(
+            "  warning: the hub counts days in {tz}, this machine in {} ({}): days near midnight will land on \
+             different dates. Set timezone = \"{tz}\" in {} (then restart the reporter) unless that is on purpose.",
+            settings.tz_name,
+            settings.tz_from,
+            settings.config_file.display()
+        ),
+        _ => {}
+    }
     println!("  token:  {} (0600)", token_file.display());
     println!("  config: {}", settings.config_file.display());
     let legacy = settings.hubs.iter().find(|h| h.legacy);
@@ -341,6 +352,8 @@ struct Joined {
     replaced: bool,
     /// The name it would have had, taken by another hub.
     renamed: Option<String>,
+    /// Whether this machine took the hub's timezone.
+    adopted: bool,
 }
 
 /// Swaps the code for a token, saves it under `dir/secrets/`, and adds the hub's entry to `settings.config_file`,
@@ -414,8 +427,17 @@ fn pair_and_save(
         None => file.hubs.push(entry.clone()),
     }
     let renamed = (name != wanted).then_some(wanted);
+    // Days must be cut in the same zone on both sides. A machine with no zone of its own (none set, no counts yet)
+    // takes the hub's.
+    let adopted = match &res.timezone {
+        Some(tz) if settings.tz_from == "system" && file.timezone.is_none() && jiff::tz::db().get(tz).is_ok() => {
+            file.timezone = Some(tz.clone());
+            true
+        }
+        _ => false,
+    };
     config::write_file(&settings.config_file, &file).map_err(|e| format!("writing config: {e}"))?;
-    Ok(Joined { res, entry, replaced, renamed })
+    Ok(Joined { res, entry, replaced, renamed, adopted })
 }
 
 // ---- hubs -----------------------------------------------------------------------------------------------------
@@ -612,8 +634,8 @@ fn doctor(_args: &[String]) -> ExitCode {
     }
     r.ok(&format!("machine \"{}\", label \"{}\"", settings.machine, settings.label));
     match jiff::tz::db().get(&settings.tz_name) {
-        Ok(_) => r.ok(&format!("timezone {} (must match the hub's)", settings.tz_name)),
-        Err(e) => r.fail(&format!("timezone {}: {e}", settings.tz_name), "use an IANA name such as Asia/Tokyo"),
+        Ok(_) => r.ok(&format!("timezone {} (from {}; must match the hub's)", settings.tz_name, settings.tz_from)),
+        Err(e) => r.fail(&format!("timezone {}: {e}", settings.tz_name), "use an IANA name such as Europe/Paris"),
     }
 
     println!("transcripts");
@@ -699,6 +721,15 @@ fn doctor(_args: &[String]) -> ExitCode {
                                         agent_stats_common::PROTOCOL
                                     ),
                                     "update the hub (agent-stats update on the hub machine)",
+                                );
+                            }
+                            if let Some(tz) = d.timezone.as_deref().filter(|tz| *tz != settings.tz_name) {
+                                r.warn(
+                                    &format!("the hub counts days in {tz}, this machine in {}", settings.tz_name),
+                                    &format!(
+                                        "set timezone = \"{tz}\" in {}, then restart the reporter",
+                                        settings.config_file.display()
+                                    ),
                                 );
                             }
                         }

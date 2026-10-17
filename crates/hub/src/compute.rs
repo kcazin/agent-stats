@@ -896,6 +896,7 @@ pub fn internal_state(db: &Connection, cfg: &Config, now: f64, publish: J, publi
         .with("allTime", s.tokens)
         .with("firstDay", s.day)
         .with("daily", daily)
+        .with("timezone", cfg.tz_name.as_str())
         .with(
             "history",
             J::Arr(
