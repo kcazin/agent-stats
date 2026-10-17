@@ -20,10 +20,8 @@ them never interleave. A second one prints "another agent-stats install/update i
 
 ## A new machine
 
-The repo is private, so use `gh` (run `gh auth login` once):
-
 ```sh
-gh api repos/kcazin/agent-stats/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh -s -- "MacBook Air"
+curl -fsSL https://raw.githubusercontent.com/kcazin/agent-stats/main/install.sh | sh -s -- "MacBook Air"
 ```
 
 The argument is the label dashboards show (default: the hostname). The script works in a temporary `.install-<pid>` directory under the data directory (so a `noexec` `/tmp` does not
@@ -67,8 +65,8 @@ agent-stats update --from ./agent-stats-0.3.1-x86_64-unknown-linux-gnu.tar.gz   
 agent-stats update --no-restart     # install and switch, leave the running services alone
 ```
 
-Releases are fetched with `gh release download` when `gh` is installed and logged in, otherwise over HTTPS with
-`GITHUB_TOKEN` (or `GH_TOKEN`). `AGENT_STATS_REPO=owner/name` points it at another repository. The archive is checked
+Releases are fetched with `gh release download` when `gh` is installed and logged in, otherwise over HTTPS
+(with `GITHUB_TOKEN` or `GH_TOKEN` when set, which a private fork needs). `AGENT_STATS_REPO=owner/name` points it at another repository. The archive is checked
 against `SHA256SUMS` (a local `.tar.gz` is checked against a `SHA256SUMS` next to it, if there is one), and the binary
 must print the expected version before it is moved into place.
 

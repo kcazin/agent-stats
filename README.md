@@ -28,7 +28,7 @@ relay only gets project totals and opaque session ids. Design and contracts: [do
 **1. The hub** (once). On the hub machine:
 
 ```sh
-gh api repos/kcazin/agent-stats/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh -s -- "Mac mini" --hub
+curl -fsSL https://raw.githubusercontent.com/kcazin/agent-stats/main/install.sh | sh -s -- "Mac mini" --hub
 $EDITOR ~/.config/agent-stats/hub.toml        # name, listen address, projects (see examples/hub.example.toml)
 agent-stats service install hub
 ```
@@ -40,7 +40,7 @@ agent-stats hub pair --label "MacBook Air"      # on the hub: prints `agent-stat
 ```
 
 ```sh
-gh api repos/kcazin/agent-stats/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh -s -- "MacBook Air"
+curl -fsSL https://raw.githubusercontent.com/kcazin/agent-stats/main/install.sh | sh -s -- "MacBook Air"
 agent-stats join http://mac-mini:7777 --code XXXX-XXXX
 agent-stats status
 ```

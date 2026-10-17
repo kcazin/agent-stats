@@ -202,7 +202,8 @@ fn gh_ready(ctx: &Ctx) -> bool {
         .unwrap_or(false)
 }
 
-/// How GitHub is reached: `gh` when it is logged in, else its HTTPS API with `ctx.github_token`.
+/// How GitHub is reached: `gh` when it is logged in, else its HTTPS API (with `ctx.github_token` when there is one,
+/// which a private fork needs).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Via {
     Gh,
@@ -318,12 +319,6 @@ pub(crate) fn download_assets(ctx: &Ctx, via: Via, version: &str, patterns: &[&s
                 .collect()
         }
         Via::Https => {
-            if ctx.github_token.is_none() {
-                return Err("gh is not installed or not logged in and GITHUB_TOKEN is not set; the repo is private, \
-                            so run `gh auth login`, export GITHUB_TOKEN or put a token in \
-                            ~/.config/agent-stats/secrets/github.token"
-                    .into());
-            }
             let rel = http_json(ctx, &format!("https://api.github.com/repos/{}/releases/tags/{tag}", ctx.repo))?;
             let assets: Vec<(String, u64)> = rel["assets"]
                 .as_array()

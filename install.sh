@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs agent-stats on this machine and starts the reporter service (systemd --user on Linux, launchd on macOS).
 #
-#   gh api repos/kcazin/agent-stats/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh -s -- "MacBook Air"
+#   curl -fsSL https://raw.githubusercontent.com/kcazin/agent-stats/main/install.sh | sh -s -- "MacBook Air"
 #   ./install.sh "MacBook Air"            # from a checkout; builds from source if there is no release
 #
 # usage: install.sh [label] [--hub] [--no-service] [--no-auto-update] [--from-source]
@@ -11,7 +11,7 @@
 #   --no-auto-update  skip the scheduled updater (it runs `update --auto` every 15 minutes)
 #   --from-source  build with cargo from the checkout instead of downloading a release
 #
-# The repo is private: releases are downloaded with `gh` (run `gh auth login` first).
+# Releases are downloaded over HTTPS (curl or wget), or with `gh` when that fails (a private fork).
 # Env: AGENT_STATS_REPO overrides the repository (default kcazin/agent-stats).
 set -eu
 
@@ -81,12 +81,32 @@ build_from_source() {
   [ -x "$BIN" ] || die "build finished but $BIN is missing"
 }
 
-download_release() {
+fetch() { # url file
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -q -O "$2" "$1"
+  else return 1; fi
+}
+
+# The latest release over HTTPS: SHA256SUMS names this platform's archive, then the archive itself.
+download_https() {
+  base="https://github.com/$REPO/releases/latest/download"
+  fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS" || return 1
+  asset=$(sed -n "s/^[0-9a-f]\{64\}  \(agent-stats-[^ ]*-$TARGET\.tar\.gz\)\$/\1/p" "$TMP/SHA256SUMS" | head -n 1)
+  [ -n "$asset" ] || { echo "the latest release has no build for $TARGET" >&2; return 1; }
+  echo "downloading $asset from $REPO" >&2
+  fetch "$base/$asset" "$TMP/$asset"
+}
+
+download_gh() {
   command -v gh >/dev/null 2>&1 || return 1
   # `gh auth token`, not `gh auth status`: status fails when any stored account is broken, even an inactive one.
   gh auth token >/dev/null 2>&1 || { echo "gh is not logged in (gh auth login)" >&2; return 1; }
-  echo "downloading the latest release for $TARGET from $REPO" >&2
+  echo "downloading the latest release for $TARGET from $REPO with gh" >&2
   gh release download --repo "$REPO" --pattern "agent-stats-*-$TARGET.tar.gz" --pattern SHA256SUMS --dir "$TMP" >&2 || return 1
+}
+
+download_release() {
+  download_https || download_gh || return 1
   asset=$(cd "$TMP" && ls agent-stats-*-"$TARGET".tar.gz 2>/dev/null | head -n 1)
   [ -n "$asset" ] || return 1
   want=$(grep "  $asset\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)
@@ -108,7 +128,7 @@ elif ! download_release; then
     echo "no release available; building from source" >&2
     build_from_source
   else
-    die "could not download a release (is gh installed and logged in, and is there a release for $TARGET?). In a checkout with cargo, use --from-source."
+    die "could not download a release for $TARGET from $REPO. In a checkout with cargo, use --from-source."
   fi
 fi
 
