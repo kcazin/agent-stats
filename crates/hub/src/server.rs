@@ -474,6 +474,10 @@ impl Hub {
         match res {
             Ok(token) => {
                 self.limiter.refund(req.peer);
+                let view_token = match crate::auth::issue_view_token(&lock(&self.db), machine, now) {
+                    Ok(t) => t,
+                    Err(e) => return Response::error(500, &e.to_string()),
+                };
                 eprintln!("hub: paired {machine}{}", label.as_deref().map(|l| format!(" ({l})")).unwrap_or_default());
                 let _ = lock(&self.db).execute(
                     "INSERT INTO machine_meta (machine, version, protocol, auth, updated) VALUES (?, ?, NULL, 'token', ?)
@@ -482,8 +486,15 @@ impl Hub {
                 );
                 Response::json(
                     200,
-                    crate::auth::pair_answer(&self.hub_id, &self.cfg.name, &token, &self.cfg.routes(), &self.cfg.tz_name)
-                        .stringify(),
+                    crate::auth::pair_answer(
+                        &self.hub_id,
+                        &self.cfg.name,
+                        &token,
+                        &view_token,
+                        &self.cfg.routes(),
+                        &self.cfg.tz_name,
+                    )
+                    .stringify(),
                 )
             }
             Err(crate::auth::PairError::BadCode) => {
@@ -862,6 +873,32 @@ impl Hub {
 
     // ---- routing ----
 
+    /// Who may read what the dashboard shows: the admin, or a machine's read-only token (`Authorization: Bearer`).
+    fn may_read(&self, req: &Request) -> bool {
+        self.is_admin(req)
+            || req
+                .bearer()
+                .is_some_and(|t| matches!(crate::auth::machine_of_view_token(&lock(&self.db), t), Ok(Some(_))))
+    }
+
+    /// `POST /view-token` with a machine's own token: a new read-only token for it (machines paired before they
+    /// came with one). Replaces the one it had.
+    fn view_token(&self, req: &Request) -> Response {
+        if req.method != "POST" {
+            return Response::error(405, "method not allowed");
+        }
+        let Some(t) = req.bearer() else { return Response::error(401, "unauthorized") };
+        let db = lock(&self.db);
+        match crate::auth::machine_of_token(&db, t) {
+            Ok(Some(machine)) => match crate::auth::issue_view_token(&db, &machine, self.clock.now()) {
+                Ok(v) => Response::json(200, J::Obj(Obj::new().with("viewToken", v.as_str())).stringify()),
+                Err(e) => Response::error(500, &e.to_string()),
+            },
+            Ok(None) => Response::error(401, "unauthorized (only a machine's own token from `join` can ask)"),
+            Err(e) => Response::error(500, &e.to_string()),
+        }
+    }
+
     pub(crate) fn is_admin(&self, req: &Request) -> bool {
         // The TCP peer only; a forwarded-for header means a proxy is in between, so neither rule applies.
         // Token-less access also needs a `Host` that is really this hub (DNS rebinding); otherwise the token rules.
@@ -934,6 +971,7 @@ impl Hub {
         match path {
             "/report" => self.report(&req),
             "/pair" => self.pair(&req),
+            "/view-token" => self.view_token(&req),
             "/release" => self.release(&req),
             p if p.starts_with("/release/") => self.release_file(&req),
             agent_stats_common::WELL_KNOWN => Response::json(
@@ -979,10 +1017,10 @@ impl Hub {
                 }
                 self.cors(&req, self.open_stream(&req, Feed::Public))
             }
-            "/api/public" if self.cfg.public || self.is_admin(&req) => json(self.public_payload(self.clock.now())),
-            "/api/state" if self.is_admin(&req) => json(self.internal_state(self.clock.now())),
-            "/api/stream" if self.is_admin(&req) => self.open_stream(&req, Feed::Private),
-            "/api/repos" if self.is_admin(&req) => match self.repos(self.clock.now()) {
+            "/api/public" if self.cfg.public || self.may_read(&req) => json(self.public_payload(self.clock.now())),
+            "/api/state" if self.may_read(&req) => json(self.internal_state(self.clock.now())),
+            "/api/stream" if self.may_read(&req) => self.open_stream(&req, Feed::Private),
+            "/api/repos" if self.may_read(&req) => match self.repos(self.clock.now()) {
                 Ok(v) => Response::json(200, J::Arr(v.into_iter().map(J::Obj).collect()).stringify()),
                 Err(e) => Response::error(500, &e.to_string()),
             },
@@ -995,7 +1033,7 @@ impl Hub {
                             .header("set-cookie", format!("agent_stats_admin={t}; HttpOnly; SameSite=Strict; Path=/"));
                     }
                 }
-                if self.is_admin(&req) {
+                if self.may_read(&req) {
                     Response::new(200, "text/html; charset=utf-8", DASHBOARD)
                 } else {
                     Response::new(

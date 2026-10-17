@@ -7,7 +7,8 @@ const USAGE: &str = "usage: agent-stats <command> [args]
 Reporter (every machine):
   report [--once] [--dry | --print]   run the reporter (what the service runs)
   join <hub-url> [--code CODE]        add a hub this machine reports to (pairing code from `hub pair`)
-  hubs [list | remove <name>]         hubs this machine reports to
+  hubs [list | remove <name> | view-token [<name>]]
+                                      hubs this machine reports to; view-token: a read-only token for a widget
   status                              what's running here and when it last reached each hub
   doctor                              check config, transcripts, hubs and the service
 

@@ -154,6 +154,9 @@ match = ["*neon*"]
     let ans = agent_stats_hub::json::J::parse(&body).unwrap();
     let token = ans.get("token").and_then(|t| t.as_str()).unwrap().to_string();
     assert_eq!(token.len(), 64);
+    let view = ans.get("viewToken").and_then(|t| t.as_str()).unwrap().to_string();
+    assert!(view.len() == 64 && view != token);
+    assert!(ans.get("timezone").and_then(|t| t.as_str()).is_some_and(|tz| !tz.is_empty()), "{body}");
     assert_eq!(ans.get("hubId").and_then(|t| t.as_str()), Some(hub.hub_id.as_str()));
     assert_eq!(
         post(&base, "/pair", None, &format!(r#"{{"code":"{code}","machine":"other"}}"#)).0,
@@ -199,6 +202,25 @@ match = ["*neon*"]
     assert!(repos.contains(r#""repo":"neon","remote":null,"project":"neon""#), "{repos}");
     assert_eq!(get(&base, "/", &[("cookie", &format!("agent_stats_admin={}", hub.admin_token))]).0, 200);
 
+    // A machine's read-only token reads what the dashboard reads; its reporting token doesn't, and the read-only
+    // one can't report.
+    let viewer = format!("Bearer {view}");
+    for path in ["/api/state", "/api/repos", "/"] {
+        assert_eq!(get(&base, path, &[("authorization", &viewer)]).0, 200, "{path}");
+        assert_eq!(get(&base, path, &[("authorization", &format!("Bearer {token}"))]).0, 401, "{path}");
+    }
+    assert_eq!(post(&base, "/report", Some(&view), &report("laptop", "")).0, 401);
+    // A machine paired before view tokens asks for one with its own token, which replaces the old one.
+    assert_eq!(post(&base, "/view-token", None, "").0, 401);
+    assert_eq!(post(&base, "/view-token", Some(&view), "").0, 401);
+    let (st, body) = post(&base, "/view-token", Some(&token), "");
+    assert_eq!(st, 200, "{body}");
+    let view2 =
+        agent_stats_hub::json::J::parse(&body).unwrap().get("viewToken").and_then(|t| t.as_str()).unwrap().to_string();
+    assert_eq!(get(&base, "/api/state", &[("authorization", &viewer)]).0, 401, "replaced");
+    let viewer = format!("Bearer {view2}");
+    assert_eq!(get(&base, "/api/state", &[("authorization", &viewer)]).0, 200);
+
     // A tick publishes the public payload (no repository names in it) and fills /stats.
     assert_eq!(get(&base, "/stats", &[]).0, 503);
     hub.tick();
@@ -228,6 +250,7 @@ match = ["*neon*"]
         assert!(auth::revoke(&d, "laptop", now).unwrap());
     }
     assert_eq!(post(&base, "/report", Some(&token), &report("laptop", "")).0, 401);
+    assert_eq!(get(&base, "/api/state", &[("authorization", &viewer)]).0, 401, "revoked with the machine");
 
     // Failed pairing attempts are rate-limited.
     let mut last = 0;

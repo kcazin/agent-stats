@@ -41,6 +41,10 @@ pub struct HubEntry {
     /// Relative to `config_dir()`, or absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_file: Option<String>,
+    /// This machine's read-only token for the hub (what the dashboard reads), for a widget; same rules as
+    /// `token_file`. The reporter never uses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_token_file: Option<String>,
 }
 
 /// A hub as the reporter uses it.
@@ -247,7 +251,17 @@ pub fn resolve(file: FileConfig, config_file: PathBuf, dir: &Path, env: &dyn Fn(
             hubs.insert(0, Hub { name: name.into(), id: None, routes: vec![url], token, token_source, legacy: true });
         }
     }
-    Settings { home: home_dir.to_string_lossy().into_owned(), roots, machine, label, tz_name, tz_from, hubs, config_file, file }
+    Settings {
+        home: home_dir.to_string_lossy().into_owned(),
+        roots,
+        machine,
+        label,
+        tz_name,
+        tz_from,
+        hubs,
+        config_file,
+        file,
+    }
 }
 
 #[cfg(test)]
@@ -372,6 +386,7 @@ routes = ["https://stats.example.com"]
                 id: Some("abc".into()),
                 routes: vec![route.into()],
                 token_file: None,
+                view_token_file: None,
             }],
             ..Default::default()
         };

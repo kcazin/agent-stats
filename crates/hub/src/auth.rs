@@ -43,8 +43,42 @@ pub fn normalize_code(code: &str) -> String {
 
 /// Codes made with `hub pair --replace <machine>` are bound to that machine and may replace its token. A separate
 /// table, so `pair_codes` stays what the JS hub's database tooling expects.
+///
+/// `view_tokens`: each enrolled machine's read-only token (sha256), for a widget on that machine. It reads what the
+/// dashboard reads and nothing else, and lives as long as the machine's own token.
 fn ensure_schema(db: &Connection) -> rusqlite::Result<()> {
-    db.execute_batch("CREATE TABLE IF NOT EXISTS pair_code_machine (code_hash TEXT PRIMARY KEY, machine TEXT NOT NULL)")
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pair_code_machine (code_hash TEXT PRIMARY KEY, machine TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS view_tokens (machine TEXT PRIMARY KEY, token_hash TEXT NOT NULL, created INTEGER NOT NULL);
+         CREATE INDEX IF NOT EXISTS view_tokens_hash ON view_tokens (token_hash);",
+    )
+}
+
+/// A new read-only token for `machine`, replacing any it had. The caller checks the machine is enrolled.
+pub fn issue_view_token(db: &Connection, machine: &str, now: f64) -> rusqlite::Result<String> {
+    ensure_schema(db)?;
+    let token = agent_stats_common::random_hex(32).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    db.execute(
+        "INSERT INTO view_tokens (machine, token_hash, created) VALUES (?, ?, ?)
+           ON CONFLICT (machine) DO UPDATE SET token_hash = excluded.token_hash, created = excluded.created",
+        params![machine, sha256_hex(&token), now as i64],
+    )?;
+    Ok(token)
+}
+
+/// The machine a read-only token belongs to, while that machine's own token is not revoked.
+pub fn machine_of_view_token(db: &Connection, token: &str) -> rusqlite::Result<Option<String>> {
+    ensure_schema(db)?;
+    let hash = sha256_hex(token);
+    let row: Option<(String, String)> = db
+        .query_row(
+            "SELECT v.machine, v.token_hash FROM view_tokens v JOIN machine_tokens t ON t.machine = v.machine
+               WHERE v.token_hash = ? AND t.revoked IS NULL",
+            params![hash],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    Ok(row.filter(|(_, h)| agent_stats_common::ct_eq(h.as_bytes(), hash.as_bytes())).map(|(m, _)| m))
 }
 
 /// Stores a one-time code valid for `ttl`.
@@ -158,6 +192,8 @@ pub fn revoke(db: &Connection, machine: &str, now: f64) -> rusqlite::Result<bool
         "UPDATE machine_tokens SET revoked = ? WHERE machine = ? AND revoked IS NULL",
         params![now as i64, machine],
     )?;
+    ensure_schema(db)?;
+    db.execute("DELETE FROM view_tokens WHERE machine = ?", params![machine])?;
     Ok(n > 0)
 }
 
@@ -270,12 +306,13 @@ pub fn read_or_create(path: &Path, bytes: usize, secret: bool) -> std::io::Resul
     }
 }
 
-/// `{"hubId", "name", "token", "routes", "timezone"}`
-pub fn pair_answer(hub_id: &str, name: &str, token: &str, routes: &[String], timezone: &str) -> J {
+/// `{"hubId", "name", "token", "viewToken", "routes", "timezone"}`
+pub fn pair_answer(hub_id: &str, name: &str, token: &str, view_token: &str, routes: &[String], timezone: &str) -> J {
     Obj::new()
         .with("hubId", hub_id)
         .with("name", name)
         .with("token", token)
+        .with("viewToken", view_token)
         .with("routes", J::Arr(routes.iter().map(|r| J::Str(r.clone())).collect()))
         .with("timezone", timezone)
         .into()

@@ -193,6 +193,40 @@ pub struct PairResponse {
     /// The zone the hub counts days in (hubs before 0.5 don't say).
     #[serde(default)]
     pub timezone: Option<String>,
+    /// A read-only token for a widget on this machine (hubs before 0.5 don't give one).
+    #[serde(default)]
+    pub view_token: Option<String>,
+}
+
+/// `POST <url>/view-token` with this machine's token: a new read-only token, replacing the one it had.
+pub fn view_token(http: &Http, url: &str, token: &str) -> Result<String, String> {
+    let res = http
+        .post
+        .post(format!("{url}/view-token"))
+        .header("authorization", format!("Bearer {token}"))
+        .send(&[][..])
+        .map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    if let Some(e) = not_followed(status, location(&res).as_deref()) {
+        return Err(format!("{url}/view-token {e}"));
+    }
+    let text = res.into_body().read_to_string().unwrap_or_default();
+    match status {
+        200 => {}
+        404 => return Err("the hub has no /view-token: update it to 0.5 or later".into()),
+        401 | 403 => return Err("the hub doesn't know this machine's token: join again".into()),
+        _ => return Err(format!("hub answered {status}: {}", snippet(&text))),
+    }
+    #[derive(Deserialize)]
+    struct V {
+        #[serde(rename = "viewToken")]
+        view_token: String,
+    }
+    serde_json::from_str::<V>(&text)
+        .ok()
+        .map(|v| v.view_token)
+        .filter(|t| !t.trim().is_empty())
+        .ok_or_else(|| format!("unexpected /view-token answer: {}", snippet(&text)))
 }
 
 /// `POST <url>/pair`: swaps a pairing code for this machine's token.

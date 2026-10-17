@@ -332,6 +332,9 @@ fn join(args: &[String]) -> ExitCode {
         _ => {}
     }
     println!("  token:  {} (0600)", token_file.display());
+    if let Some(v) = entry.view_token_file.as_deref() {
+        println!("  view token: {} (0600; read-only, for a widget on this machine)", dir.join(v).display());
+    }
     println!("  config: {}", settings.config_file.display());
     let legacy = settings.hubs.iter().find(|h| h.legacy);
     if let Some(l) = legacy {
@@ -379,6 +382,15 @@ fn pair_and_save(
     let token_file = dir.join(&rel);
     agent_stats_common::write_secret(&token_file, &res.token)
         .map_err(|e| format!("writing {}: {e}", token_file.display()))?;
+    let view_rel = format!("secrets/hub-{}.view.token", res.hub_id);
+    let view_token_file = match res.view_token.as_deref() {
+        Some(v) => {
+            let p = dir.join(&view_rel);
+            agent_stats_common::write_secret(&p, v).map_err(|e| format!("writing {}: {e}", p.display()))?;
+            Some(view_rel)
+        }
+        None => None,
+    };
     let routes = dedupe(std::iter::once(url.to_owned()).chain(res.routes.iter().cloned()));
     let mut file = settings.file.clone();
     // The entry this hub replaces: the same id, or an id-less entry with one of its routes (a hub configured by
@@ -410,7 +422,8 @@ fn pair_and_save(
     } else {
         wanted.clone()
     };
-    let entry = HubEntry { name: name.clone(), id: Some(res.hub_id.clone()), routes, token_file: Some(rel) };
+    let entry =
+        HubEntry { name: name.clone(), id: Some(res.hub_id.clone()), routes, token_file: Some(rel), view_token_file };
     let replaced = old.is_some();
     match old {
         Some(i) => {
@@ -463,6 +476,10 @@ fn hubs(args: &[String]) -> ExitCode {
                     h.token_source,
                     if h.token.is_some() { "present" } else { "MISSING" }
                 );
+                let view = settings.file.hubs.iter().find(|e| e.name == h.name && !h.legacy);
+                if let Some(v) = view.and_then(|e| e.view_token_file.as_deref()) {
+                    println!("  view token: {}", config::token_path(&config_dir(), v).display());
+                }
             }
             ExitCode::SUCCESS
         }
@@ -482,18 +499,73 @@ fn hubs(args: &[String]) -> ExitCode {
             if let Err(e) = config::write_file(&settings.config_file, &file) {
                 return fail(&format!("writing config: {e}"));
             }
-            if let Some(t) = gone.token_file.as_deref() {
-                let p = config::token_path(&config_dir(), t);
+            for t in [gone.token_file.as_deref(), gone.view_token_file.as_deref()].into_iter().flatten() {
                 // Another entry may share the file (same hub under two names).
-                if !file.hubs.iter().any(|h| h.token_file.as_deref() == Some(t)) {
-                    let _ = std::fs::remove_file(&p);
+                let shared = file
+                    .hubs
+                    .iter()
+                    .any(|h| h.token_file.as_deref() == Some(t) || h.view_token_file.as_deref() == Some(t));
+                if !shared {
+                    let _ = std::fs::remove_file(config::token_path(&config_dir(), t));
                 }
             }
             println!("Removed hub {name}. A running reporter stops reporting to it within 15 s.");
             println!("(The hub still has this machine's data; revoke its token there with `agent-stats hub revoke`.)");
             ExitCode::SUCCESS
         }
-        Some(other) => fail(&format!("unknown hubs command {other}\nusage: agent-stats hubs [list | remove <name>]")),
+        Some("view-token") => view_token(&settings, args.get(1).map(String::as_str)),
+        Some(other) => fail(&format!("unknown hubs command {other}\n{HUBS_USAGE}")),
+    }
+}
+
+const HUBS_USAGE: &str = "usage: agent-stats hubs [list | remove <name> | view-token [<name>]]";
+
+/// `hubs view-token [name]`: asks each joined hub (or the named one) for this machine's read-only token and saves it
+/// beside the reporting token, for a widget. Hubs paired from 0.5 on handed one out at `join` already.
+fn view_token(settings: &Settings, only: Option<&str>) -> ExitCode {
+    let http = Http::new();
+    let mut file = settings.file.clone();
+    let (mut got, mut failed) = (0, 0);
+    for h in settings.hubs.iter().filter(|h| !h.legacy && only.is_none_or(|n| n == h.name)) {
+        let (Some(id), Some(token)) = (h.id.as_deref(), h.token.as_deref()) else {
+            eprintln!("{}: no id or token; join it again", h.name);
+            failed += 1;
+            continue;
+        };
+        let mut last = String::from("no routes");
+        let answer = h.routes.iter().find_map(|r| match hub::view_token(&http, r, token) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                last = format!("{r}: {e}");
+                None
+            }
+        });
+        let Some(v) = answer else {
+            eprintln!("{}: {last}", h.name);
+            failed += 1;
+            continue;
+        };
+        let rel = format!("secrets/hub-{id}.view.token");
+        let path = config_dir().join(&rel);
+        if let Err(e) = agent_stats_common::write_secret(&path, &v) {
+            return fail(&format!("writing {}: {e}", path.display()));
+        }
+        for e in file.hubs.iter_mut().filter(|e| e.id.as_deref() == Some(id)) {
+            e.view_token_file = Some(rel.clone());
+        }
+        println!("{}: view token saved to {} (0600)", h.name, path.display());
+        got += 1;
+    }
+    if got > 0 {
+        if let Err(e) = config::write_file(&settings.config_file, &file) {
+            return fail(&format!("writing config: {e}"));
+        }
+    }
+    match (got, failed, only) {
+        (0, 0, Some(n)) => fail(&format!("no joined hub named {n} (see agent-stats hubs list)")),
+        (0, 0, None) => fail("no joined hubs: agent-stats join <hub-url> --code CODE"),
+        (_, 0, _) => ExitCode::SUCCESS,
+        _ => ExitCode::from(1),
     }
 }
 
@@ -817,9 +889,11 @@ mod tests {
             match r.path.as_str() {
             "/pair" if r.body.contains(r#""code":"K7Q2-9XMD""#) => (
                 200,
-                r#"{"hubId":"6f1c","name":"home","token":"secret-tok","routes":["http://mac-mini:7777","http://100.1.2.3:7777"]}"#.into(),
+                r#"{"hubId":"6f1c","name":"home","token":"secret-tok","viewToken":"view-tok","routes":["http://mac-mini:7777","http://100.1.2.3:7777"],"timezone":"Europe/Paris"}"#.into(),
             ),
             "/pair" => (403, r#"{"error":"invalid or expired code"}"#.into()),
+            "/view-token" if r.auth.as_deref() == Some("Bearer secret-tok") => (200, r#"{"viewToken":"view-tok-2"}"#.into()),
+            "/view-token" => (401, r#"{"error":"unauthorized"}"#.into()),
             _ => (404, String::new()),
         }
         });
@@ -849,6 +923,16 @@ mod tests {
         }
         let file = config::read_file(&cf).unwrap();
         assert_eq!(file.machine.as_deref(), Some("m1"));
+        // The read-only token sits beside it, and this machine (no zone of its own) took the hub's.
+        assert_eq!(file.hubs[1].view_token_file.as_deref(), Some("secrets/hub-6f1c.view.token"));
+        assert_eq!(
+            agent_stats_common::read_secret(&d.join("secrets/hub-6f1c.view.token")).as_deref(),
+            Some("view-tok")
+        );
+        assert!(j.adopted);
+        assert_eq!(file.timezone.as_deref(), Some("Europe/Paris"));
+        assert_eq!(crate::hub::view_token(&http, &fake.url, "secret-tok").as_deref(), Ok("view-tok-2"));
+        assert!(crate::hub::view_token(&http, &fake.url, "nope").unwrap_err().contains("join again"));
         assert_eq!(file.hubs.len(), 2);
         assert_eq!((file.hubs[0].name.as_str(), file.hubs[0].id.as_deref()), ("home", Some("old")));
         assert_eq!(file.hubs[1].id.as_deref(), Some("6f1c"));
@@ -858,6 +942,7 @@ mod tests {
         // Joining the same hub again replaces its entry (same id) and keeps its name.
         let j = pair_and_save(&http, &s, &d, &fake.url, "K7Q2-9XMD", None).unwrap();
         assert!(j.replaced && j.renamed.is_none());
+        assert!(!j.adopted, "the zone is in config.toml now");
         assert_eq!(j.entry.name, "home-2");
         let file = config::read_file(&cf).unwrap();
         assert_eq!(file.hubs.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["home", "home-2"]);
