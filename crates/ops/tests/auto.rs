@@ -414,6 +414,33 @@ fn hub_machine_mirrors_its_release_heals_and_keeps_two() {
 }
 
 #[test]
+fn managed_hub_mirrors_the_version_it_runs_and_installs_nothing() {
+    let mut sb = Sandbox::new();
+    sb.ctx.self_version = "0.3.0".into();
+    // An install from before the app took over, still on 0.2.0, and a newer release: neither matters.
+    sb.install_current("0.2.0");
+    sb.latest("0.4.0", OLD);
+    let remote = sb.root.join("remote");
+    sb.release(&remote, "0.3.0", &[TARGET, OTHER_TARGET], true);
+    let rel = sb.ctx.releases_dir();
+
+    // No hub here: nothing at all.
+    auto::managed_run(&sb.ctx, "Tokiscope").unwrap();
+    assert!(!rel.exists());
+    assert!(auto::load_record(&sb.ctx).is_none());
+
+    // A hub: the running version is mirrored for its reporters, once.
+    fs::write(sb.ctx.config_dir.join("hub.toml"), "").unwrap();
+    auto::managed_run(&sb.ctx, "Tokiscope").unwrap();
+    assert!(rel.join("0.3.0").join(MIRROR_COMPLETE).is_file());
+    assert!(!rel.join("0.2.0").exists() && !rel.join("0.4.0").exists());
+    assert_eq!(sb.ctx.current_version().as_deref(), Some("0.2.0"), "nothing installed");
+    fs::remove_file(sb.root.join("log")).unwrap();
+    auto::managed_run(&sb.ctx, "Tokiscope").unwrap();
+    assert!(!sb.log().contains("release download"), "{}", sb.log());
+}
+
+#[test]
 fn hub_machine_mirrors_the_version_it_just_installed() {
     let sb = Sandbox::new();
     sb.fake_unit("hub");

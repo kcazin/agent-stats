@@ -49,6 +49,17 @@ fn main() -> ExitCode {
         let log = agent_stats_common::state_dir().join("logs").join(format!("{cmd}.log"));
         agent_stats_common::rotate_log(&log, 10 << 20, 3);
     }
+    // An app's launchd job can't name a file under the home directory for its output, so when an app runs the
+    // services (and nobody is watching the output), a role appends to the log `service install` would have given it.
+    #[cfg(unix)]
+    {
+        let role = if serving { Some(cmd) } else { (cmd == "update" && rest == ["--auto"]).then_some("updater") };
+        if let Some(role) =
+            role.filter(|_| unsafe { libc::isatty(1) } == 0 && agent_stats_common::managed_by().is_some())
+        {
+            log_to(&agent_stats_common::state_dir().join("logs").join(format!("{role}.log")));
+        }
+    }
     match cmd {
         "report" | "join" | "hubs" | "status" | "doctor" => agent_stats_reporter::cli_main(cmd, rest),
         "hub" => agent_stats_hub::main(rest),
@@ -65,6 +76,21 @@ fn main() -> ExitCode {
         _ => {
             eprintln!("unknown command {cmd}\n\n{USAGE}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// Sends stdout and stderr to the end of `path` (rotated like a service log first). Best effort: without it the
+/// output goes where it went before.
+#[cfg(unix)]
+fn log_to(path: &std::path::Path) {
+    use std::os::fd::AsRawFd;
+    agent_stats_common::rotate_log(path, 10 << 20, 3);
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(path));
+    if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        unsafe {
+            libc::dup2(f.as_raw_fd(), 1);
+            libc::dup2(f.as_raw_fd(), 2);
         }
     }
 }

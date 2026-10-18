@@ -113,8 +113,12 @@ there), else the machine's. `join` writes the hub's zone into config.toml when t
 warns when they differ; `doctor` warns too.
 
 **Managed mode.** When an app ships agent-stats (a binary under `X.app/Contents/`, or `AGENT_STATS_MANAGED_BY=X`), the
-app installs, runs and updates it: `update` and `rollback` refuse and point at the app, `update --auto` does nothing,
-`service install`/`uninstall` refuse (`service status` works). `status` and `doctor` name the app.
+app installs, runs and updates it: `update` and `rollback` refuse and point at the app, `service install`/`uninstall`
+refuse (`service status` works). `update --auto` installs nothing; on a hub machine (a `hub.toml` in the config dir) it
+mirrors the running version for the hub's reporters, which still update themselves from the hub. The app's launchd
+jobs can't name a log file under the home directory, so a managed `report`, `hub serve`, `relay serve` or
+`update --auto` whose output isn't a terminal appends it to `state_dir()/logs/<role>.log` itself (`updater.log` for
+`update --auto`), the files `service install` would use. `status` and `doctor` name the app.
 
 Reporter details (crates/reporter):
 

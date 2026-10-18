@@ -422,6 +422,31 @@ pub fn mirror(ctx: &Ctx) -> Res<Option<String>> {
     let Some(v) = ctx.current_version() else {
         return Err("no active version to mirror".into());
     };
+    mirror_version(ctx, &v)
+}
+
+/// What `update --auto` does when an app ships this binary: the app updates it, so there is nothing to install,
+/// but a hub here still mirrors the release it runs for its reporters (by the hub.toml in the config dir).
+pub fn managed_run(ctx: &Ctx, app: &str) -> Res<()> {
+    if !ctx.config_dir.join("hub.toml").is_file() {
+        println!("agent-stats here is part of {app}, which updates it; nothing to do");
+        return Ok(());
+    }
+    fs::create_dir_all(&ctx.data_dir).ctx("create data dir")?;
+    let Some(_lock) = InstallLock::try_acquire(ctx)? else {
+        println!("another agent-stats install/update is running; trying again on the next run");
+        return Ok(());
+    };
+    match mirror_version(ctx, &ctx.self_version)? {
+        Some(note) => println!("{note}"),
+        None => println!("agent-stats here is part of {app}, which updates it; {} is mirrored", ctx.self_version),
+    }
+    Ok(())
+}
+
+/// [`mirror`] for version `v`.
+fn mirror_version(ctx: &Ctx, v: &str) -> Res<Option<String>> {
+    let v = v.to_string();
     let releases = ctx.releases_dir();
     let dest = releases.join(&v);
     if dest.join(MIRROR_COMPLETE).is_file() {
