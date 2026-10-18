@@ -46,9 +46,13 @@ fn tailscale_bin() -> Option<String> {
     std::path::Path::new(app).is_file().then(|| app.to_string())
 }
 
-/// `tailscale status --json`, parsed; None without Tailscale (or when it is stopped).
+/// `tailscale status --json`, parsed; None without Tailscale (or when it is stopped). The Mac app's binary only acts
+/// as the CLI when started from a shell: from an app or a launchd job it waits as the app would, unless
+/// TAILSCALE_BE_CLI is set.
 pub fn tailscale_status() -> Option<TsStatus> {
-    let out = run_for(Command::new(tailscale_bin()?).args(["status", "--json"]), Duration::from_secs(3))?;
+    let mut cmd = Command::new(tailscale_bin()?);
+    cmd.args(["status", "--json"]).env("TAILSCALE_BE_CLI", "1");
+    let out = run_for(&mut cmd, Duration::from_secs(3))?;
     parse_tailscale(&out)
 }
 
@@ -277,6 +281,9 @@ pub struct Candidate {
     pub me: bool,
     /// Where to ask for the descriptor.
     pub url: Option<String>,
+    /// Where to ask when `url` doesn't answer: the Tailscale name, when Bonjour gave a .local one (a hub may listen
+    /// on its Tailscale address only).
+    pub fallback: Option<String>,
     pub agent_stats: Option<Value>,
     pub member: bool,
 }
@@ -310,7 +317,7 @@ pub fn merge(ts: Option<&TsStatus>, ads: &[Advert], my_name: &str) -> Vec<Candid
                 c.online = true;
                 // On the same network the advertised .local address answers fastest and needs no tailnet.
                 if url.is_some() {
-                    c.url = url;
+                    c.fallback = std::mem::replace(&mut c.url, url);
                 }
                 if c.os.is_none() {
                     c.os = os;
@@ -368,8 +375,13 @@ pub fn discover(limit: Duration) -> Vec<Candidate> {
         .iter()
         .enumerate()
         .filter(|(_, c)| c.online && c.os.as_deref() != Some("windows"))
-        .filter_map(|(i, c)| c.url.clone().map(|u| (i, u)))
-        .map(|(i, u)| std::thread::spawn(move || (i, probe(&u, left))))
+        .filter_map(|(i, c)| c.url.clone().map(|u| (i, u, c.fallback.clone())))
+        .map(|(i, u, f)| {
+            std::thread::spawn(move || {
+                let each = if f.is_some() { left / 2 } else { left };
+                (i, probe(&u, each).or_else(|| f.and_then(|f| probe(&f, each))))
+            })
+        })
         .collect();
     for h in handles {
         if let Ok((i, d)) = h.join() {
@@ -377,15 +389,14 @@ pub fn discover(limit: Duration) -> Vec<Candidate> {
         }
     }
     // Members: a descriptor with our fleet id, names this machine's hub knows, or an address a machine of the fleet
-    // reported from (a Linux box called `cachy` on the tailnet may report as `cachyos-x8664`).
+    // reported from (a Linux box called `cachy` on the tailnet may report as `cachyos-x8664`). A hub that answers with
+    // another fleet's id is not one, even if its name is known here (its reporter may report here too).
     let (members, addrs, fleet) = match crate::local::HubCtx::open() {
         Ok(ctx) => (ctx.member_names(), ctx.member_addrs(), Some(ctx.hub_id.clone())),
         Err(_) => Default::default(),
     };
     for c in &mut cands {
-        let ours = fleet.is_some() && c.agent_stats.as_ref().and_then(|a| a["fleetId"].as_str()) == fleet.as_deref();
-        c.member =
-            ours || members.contains(&norm_name(&c.name)) || c.addresses.iter().any(|a| addrs.contains(a.as_str()));
+        c.member = is_member(c, fleet.as_deref(), &members, &addrs);
     }
     // Online first, then by name; this machine last.
     cands.sort_by(|a, b| (a.me, !a.online, &a.name).cmp(&(b.me, !b.online, &b.name)));
@@ -404,6 +415,18 @@ pub fn to_json(c: &Candidate) -> Value {
         "member": c.member,
         "agentStats": c.agent_stats,
     })
+}
+
+fn is_member(
+    c: &Candidate,
+    fleet: Option<&str>,
+    members: &std::collections::HashSet<String>,
+    addrs: &std::collections::HashSet<String>,
+) -> bool {
+    match (fleet, c.agent_stats.as_ref().and_then(|a| a["fleetId"].as_str())) {
+        (Some(ours), Some(theirs)) => ours == theirs,
+        _ => members.contains(&norm_name(&c.name)) || c.addresses.iter().any(|a| addrs.contains(a.as_str())),
+    }
 }
 
 /// `fleet discover`.
@@ -513,8 +536,22 @@ mod tests {
         assert_eq!(mini.sources, ["tailscale", "bonjour"]);
         assert!(mini.online, "Bonjour answered, so it is online even if Tailscale says not");
         assert_eq!(mini.url.as_deref(), Some("http://Killians-Mac-mini.local:7777"));
+        assert_eq!(mini.fallback.as_deref(), Some("http://killians-mac-mini.tail1.ts.net:7777"));
         assert!(c.iter().find(|c| c.name == "killians-macbook-air").unwrap().me);
         let only_bonjour = merge(None, &ads, "Killians-Mac-mini");
         assert!(only_bonjour[0].me);
+        assert_eq!(only_bonjour[0].fallback, None);
+    }
+
+    #[test]
+    fn another_fleets_hub_is_not_a_member_even_by_name() {
+        let names: std::collections::HashSet<String> = ["killians-mac-mini".to_string()].into();
+        let none = std::collections::HashSet::new();
+        let mut mini = Candidate { name: "killians-mac-mini".into(), ..Default::default() };
+        assert!(is_member(&mini, Some("ours"), &names, &none), "no descriptor: known by name");
+        mini.agent_stats = Some(json!({"role": "hub", "fleetId": "theirs"}));
+        assert!(!is_member(&mini, Some("ours"), &names, &none));
+        mini.agent_stats = Some(json!({"role": "hub", "fleetId": "ours"}));
+        assert!(is_member(&mini, Some("ours"), &none, &none));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats-common"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Paths, secrets, status files and wire constants shared by every agent-stats role"

@@ -157,9 +157,15 @@ B="$HOME/.local/share/agent-stats/current/agent-stats"
 [ -x "$B" ] || B="$HOME/.local/bin/agent-stats"
 [ -x "$B" ] || B=$(command -v agent-stats 2>/dev/null || true)
 if [ -n "$B" ] && [ -x "$B" ]; then echo "bin=$B"; echo "version=$("$B" version 2>/dev/null | head -n 1)"; fi
-C="${AGENT_STATS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/agent-stats}/config.toml"
+D="${AGENT_STATS_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/agent-stats}"
+C="$D/config.toml"
 if [ -f "$C" ]; then
   sed -n 's/^machine *= *"\(.*\)".*/machine=\1/p; s/^id *= *"\(.*\)".*/hub=\1/p' "$C"
+fi
+S="${XDG_STATE_HOME:-$HOME/.local/state}/agent-stats/hub-id"
+if [ -f "$D/hub.toml" ] && grep -q '^\[fleet\]' "$D/hub.toml" && [ -f "$S" ]; then
+  echo "replica=$(cat "$S")"
+  [ -f "$D/fleet.toml" ] && sed -n '/^\[/q; s/^name *= *"\(.*\)".*/fleet=\1/p' "$D/fleet.toml"
 fi
 for u in "$@"; do
   b=""
@@ -190,6 +196,9 @@ pub struct Probe {
     pub machine: Option<String>,
     /// Hub ids it already reports to.
     pub hubs: Vec<String>,
+    /// The fleet id it is a replica of, and that fleet's name.
+    pub replica: Option<String>,
+    pub fleet: Option<String>,
     /// Each route tried and what its well-known path answered (empty: nothing).
     pub routes: Vec<(String, String)>,
 }
@@ -212,6 +221,8 @@ pub fn parse_probe(out: &str) -> Probe {
             "version" => p.version = v.split_whitespace().nth(1).map(str::to_string),
             "machine" if !v.is_empty() => p.machine = Some(v.into()),
             "hub" if !v.is_empty() => p.hubs.push(v.into()),
+            "replica" if !v.is_empty() => p.replica = Some(v.into()),
+            "fleet" if !v.is_empty() => p.fleet = Some(v.into()),
             "route" => {
                 let (u, b) = v.split_once(' ').unwrap_or((v, ""));
                 p.routes.push((u.to_string(), b.trim().to_string()));
@@ -400,6 +411,19 @@ pub fn add(a: &Args) -> Res<()> {
             "unsupported",
             &format!("{host} has neither curl nor wget"),
             Some("install curl there"),
+        );
+    }
+    // A replica of another fleet would only get this fleet as a second hub to report to: its stats stay over there.
+    if let Some(id) = p.replica.as_deref().filter(|id| *id != ctx.hub_id) {
+        let name = p.fleet.as_deref().map_or_else(|| id.chars().take(8).collect(), str::to_string);
+        return fail(
+            "connect",
+            "other-fleet",
+            &format!("{host} is a replica of another fleet, \"{name}\""),
+            Some(&format!(
+                "to have one fleet, join that one from this machine (agent-stats fleet request <a route of {host}>, \
+                 or Set Up This Mac… > Join in Tokiscope) instead of adding {host} here"
+            )),
         );
     }
     out.ok("connect", &describe(&p));
@@ -668,12 +692,19 @@ mod tests {
         assert_eq!((p.os.as_str(), p.arch.as_str(), p.hostname.as_str()), ("Linux", "x86_64", "cachy"));
         assert_eq!(p.version.as_deref(), Some("0.4.0"));
         assert_eq!(p.hubs, ["6f1c"]);
+        assert_eq!((p.replica.as_deref(), p.fleet.as_deref()), (None, None));
         assert!(p.fetcher && !p.launchd && !p.tokiscope);
         assert_eq!(p.routes.len(), 2);
         assert_eq!(pick_route(&p.routes, "6f1c").as_deref(), Some("http://mini.ts.net:7777"));
         assert_eq!(pick_route(&p.routes, "other"), None);
         assert_eq!(machine_name(&p), "cachy");
         assert_eq!(describe(&p), "Linux x86_64 · systemd · agent-stats 0.4.0 installed");
+    }
+
+    #[test]
+    fn probe_output_of_a_replica() {
+        let p = parse_probe("os=Darwin\narch=arm64\nhub=335a\nreplica=335a\nfleet=home\n");
+        assert_eq!((p.replica.as_deref(), p.fleet.as_deref()), (Some("335a"), Some("home")));
     }
 
     #[test]
