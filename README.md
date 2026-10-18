@@ -31,8 +31,8 @@ machine sleeps, restarts or goes offline. With Tokiscope this is the default; by
 
 ```sh
 agent-stats fleet create --name home            # on the first machine
-agent-stats machines add --ssh me@linux-box     # from any replica: installs, joins, waits for the first report
-agent-stats machines invite                     # or a line to paste on a machine you can't SSH to
+agent-stats fleet add --ssh me@linux-box     # from any replica: installs, joins, waits for the first report
+agent-stats fleet invite                     # or a line to paste on a machine you can't SSH to
 agent-stats fleet request http://mac-mini:7777  # on another Mac: then approve it on any replica (same 4 digits)
 agent-stats fleet status                        # replicas, who publishes, when each was last reached
 ```

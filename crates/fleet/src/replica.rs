@@ -3,7 +3,7 @@
 //! `requests`, `approve` and `deny` answer such requests, `status` shows the replicas and which one publishes.
 
 use crate::local::{dedupe_routes, now_ms, HubCtx};
-use crate::Res;
+use crate::{Res, USAGE};
 use agent_stats_hub::auth::sha256_hex;
 use agent_stats_hub::config::{Paths, FLEET_KEYS};
 use agent_stats_hub::fleet;
@@ -11,17 +11,6 @@ use agent_stats_reporter::config as rcfg;
 use serde_json::{json, Value};
 use std::process::ExitCode;
 use std::time::Duration;
-
-const USAGE: &str = "usage: agent-stats fleet <command> [--json]
-  status                       this fleet's replicas, which one publishes, when each was last reached
-  create [--name N] [--port P] start a fleet with this machine as its first replica
-  replica [--port P]           make this machine a replica of the fleet it joined (or turn this hub into the
-                               fleet's first replica)
-  request <url> [--label L] [--leaf]
-                               ask the fleet at <url> to let this machine in; approve it on any replica (both show
-                               the same 4 digits). Without --leaf this machine then becomes a replica.
-  requests                     join requests waiting here
-  approve <id> | deny <id>     answer a join request";
 
 #[derive(Default)]
 struct Opts {
@@ -55,16 +44,9 @@ fn parse(args: &[String]) -> Res<Opts> {
     Ok(o)
 }
 
-/// `agent-stats fleet <subcommand> [args]`.
+/// The `agent-stats fleet` subcommands above (`args[0]` is the subcommand).
 pub fn main(args: &[String]) -> ExitCode {
-    let Some(sub) = args.first().map(String::as_str) else {
-        eprintln!("{USAGE}");
-        return ExitCode::from(2);
-    };
-    if matches!(sub, "help" | "--help" | "-h") {
-        println!("{USAGE}");
-        return ExitCode::SUCCESS;
-    }
+    let sub = args[0].as_str();
     let o = match parse(&args[1..]) {
         Ok(o) => o,
         Err(e) => {
@@ -315,7 +297,7 @@ fn create(o: &Opts) -> Res<()> {
         json!({"fleetId": fleet_id, "name": name, "node": node, "listen": format!("0.0.0.0:{port}"), "startHub": !started, "alwaysOn": aon}),
         &format!(
             "Started fleet \"{name}\" with {node} as its first replica (listening on port {port}{}).\nAdd machines with: \
-             agent-stats machines add --ssh <user@host>, or agent-stats machines invite",
+             agent-stats fleet add --ssh <user@host>, or agent-stats fleet invite",
             if started { "" } else { "; start the hub from the app" }
         ),
     );

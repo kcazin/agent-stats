@@ -47,11 +47,11 @@ Supported targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aar
 On a machine with the hub (a Mac with Tokiscope, or `agent-stats service install hub`):
 
 ```sh
-agent-stats machines discover                    # Tailscale peers and Bonjour adverts, and which run agent-stats
-agent-stats machines add --ssh me@cachy          # installs agent-stats there and joins it: nothing to type there
-agent-stats machines invite                      # or: a one-time line to paste on the new machine
-agent-stats machines list                        # the machines of this fleet
-agent-stats machines remove cachy --ssh me@cachy # revoke, and stop its reporter
+agent-stats fleet discover                    # Tailscale peers and Bonjour adverts, and which run agent-stats
+agent-stats fleet add --ssh me@cachy          # installs agent-stats there and joins it: nothing to type there
+agent-stats fleet invite                      # or: a one-time line to paste on the new machine
+agent-stats fleet list                        # the machines of this fleet
+agent-stats fleet remove cachy --ssh me@cachy # revoke, and stop its reporter
 ```
 
 `add --ssh` uses the system `ssh` (your `~/.ssh/config`, agent and Tailscale SSH work) in batch mode, so it never

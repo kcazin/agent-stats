@@ -1,4 +1,4 @@
-//! Advertises the hub on the local network as `_agent-stats._tcp` (so `agent-stats machines discover` and a new
+//! Advertises the hub on the local network as `_agent-stats._tcp` (so `agent-stats fleet discover` and a new
 //! Mac's Tokiscope find it), with the system's own tool: `dns-sd -R` on macOS, `avahi-publish-service` on Linux.
 //! Best effort: without the tool nothing is advertised and nothing fails. The child is killed when the guard drops.
 //! `AGENT_STATS_NO_BONJOUR=1` turns it off.

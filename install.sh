@@ -13,10 +13,10 @@
 #   --from-source  build with cargo from the checkout instead of downloading a release
 #   --version V    that release instead of the latest
 #   --archive FILE a release archive already on this machine, checked against the SHA256SUMS beside it
-#   --join URL --code CODE   then join that hub or fleet (the line `agent-stats machines invite` prints)
+#   --join URL --code CODE   then join that hub or fleet (the line `agent-stats fleet invite` prints)
 #
 # Releases are downloaded over HTTPS (curl or wget), or with `gh` when that fails (a private fork). Exit status 3:
-# no release could be downloaded (`agent-stats machines add` then uploads the archive and retries with --archive).
+# no release could be downloaded (`agent-stats fleet add` then uploads the archive and retries with --archive).
 # Env: AGENT_STATS_REPO overrides the repository (default kcazin/agent-stats).
 set -eu
 
@@ -51,7 +51,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$LABEL" ] || LABEL=$(hostname -s 2>/dev/null || hostname)
-if [ -n "$JOIN_URL" ] && [ -z "$JOIN_CODE" ]; then die "--join needs --code (from agent-stats machines invite)"; fi
+if [ -n "$JOIN_URL" ] && [ -z "$JOIN_CODE" ]; then die "--join needs --code (from agent-stats fleet invite)"; fi
 if [ -z "$JOIN_URL" ] && [ -n "$JOIN_CODE" ]; then die "--code needs --join URL"; fi
 if [ -n "$JOIN_URL" ] && [ "$WITH_SERVICE" = 0 ]; then die "--join needs the reporter service (drop --no-service)"; fi
 
@@ -122,7 +122,7 @@ download_gh() {
   gh release download ${VERSION:+"v$VERSION"} --repo "$REPO" --pattern "agent-stats-*-$TARGET.tar.gz" --pattern SHA256SUMS --dir "$TMP" >&2 || return 1
 }
 
-# --archive: the archive and the SHA256SUMS beside it (as `agent-stats machines add` uploads them).
+# --archive: the archive and the SHA256SUMS beside it (as `agent-stats fleet add` uploads them).
 use_archive() {
   [ -f "$ARCHIVE" ] || die "--archive $ARCHIVE: no such file"
   sums="$(dirname "$ARCHIVE")/SHA256SUMS"

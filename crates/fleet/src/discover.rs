@@ -1,4 +1,4 @@
-//! `machines discover`: candidates from Tailscale (`tailscale status --json`) and Bonjour (`_agent-stats._tcp`, with
+//! `fleet discover`: candidates from Tailscale (`tailscale status --json`) and Bonjour (`_agent-stats._tcp`, with
 //! `dns-sd` on macOS or `avahi-browse` on Linux), merged by name, then each online one asked for its well-known
 //! descriptor on the hub port. Only a suggestion list: nothing here enrolls a machine. Every external command runs
 //! under a deadline and is killed when it passes, so the whole thing ends within `--timeout`.
@@ -404,7 +404,7 @@ pub fn to_json(c: &Candidate) -> Value {
     })
 }
 
-/// `machines discover`.
+/// `fleet discover`.
 pub fn run(a: &Args) -> Res<()> {
     let cands = discover(a.timeout.unwrap_or(Duration::from_secs(3)));
     if a.json {
@@ -426,7 +426,7 @@ pub fn run(a: &Args) -> Res<()> {
                 d["name"].as_str().unwrap_or("?")
             ),
             (None, false) if c.online => {
-                format!("no hub answers; to add it: agent-stats machines add --ssh <user>@{}", c.name)
+                format!("no hub answers; to add it: agent-stats fleet add --ssh <user>@{}", c.name)
             }
             (None, false) => "offline".to_string(),
         };

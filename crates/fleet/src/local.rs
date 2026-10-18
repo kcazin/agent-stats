@@ -1,5 +1,5 @@
 //! This machine's side: its hub (hub.toml, hub.db, the fleet id), the addresses another machine might reach it at,
-//! pairing codes, and `machines invite` / `machines list`.
+//! pairing codes, and `fleet invite` / `fleet list`.
 
 use crate::{norm_name, Args, Res};
 use agent_stats_hub::config::{Config, Paths};
@@ -140,7 +140,7 @@ pub fn lan_ipv4() -> Vec<String> {
     out
 }
 
-/// `machines invite`: a one-time line that installs agent-stats and joins this fleet.
+/// `fleet invite`: a one-time line that installs agent-stats and joins this fleet.
 pub fn invite(a: &Args) -> Res<()> {
     let ctx = HubCtx::open()?;
     let url = ctx.routes_back().into_iter().next().ok_or("this hub has no address another machine can use")?;
@@ -196,7 +196,7 @@ fn replicas(db: &Connection) -> Vec<(String, Vec<String>)> {
     .unwrap_or_default()
 }
 
-/// `machines list`.
+/// `fleet list`.
 pub fn list(a: &Args) -> Res<()> {
     let ctx = HubCtx::open()?;
     let db = ctx.db()?;
@@ -227,7 +227,7 @@ pub fn list(a: &Args) -> Res<()> {
         return Ok(());
     }
     if rows.is_empty() {
-        println!("No machines yet. Add one with `agent-stats machines add --ssh <user@host>` or `machines invite`.");
+        println!("No machines yet. Add one with `agent-stats fleet add --ssh <user@host>` or `fleet invite`.");
         return Ok(());
     }
     println!("{:<24} {:<8} {:<8} {:<10} LABEL", "MACHINE", "ROLE", "STATE", "VERSION");

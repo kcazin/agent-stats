@@ -1,6 +1,7 @@
-//! `agent-stats machines` and `agent-stats fleet` (see [`replica`]): the machines of this fleet, and adding more. `discover` finds candidates (Tailscale peers,
+//! `agent-stats fleet`: the machines of this fleet, and adding more. `discover` finds candidates (Tailscale peers,
 //! Bonjour `_agent-stats._tcp`), `add --ssh` installs and joins a machine over SSH, `invite` prints a line to paste
-//! on one, `list` and `remove` manage the enrolled ones. Tokiscope draws these from their `--json` output; the
+//! on one, `list` and `remove` manage the enrolled ones; the rest (this machine's own place in the fleet) is in
+//! [`replica`]. Tokiscope draws these from their `--json` output; the
 //! contracts are in docs/FLEET.md ("CLI contracts").
 
 pub mod discover;
@@ -14,7 +15,16 @@ use std::time::Duration;
 
 pub type Res<T> = Result<T, String>;
 
-const USAGE: &str = "usage: agent-stats machines <command> [--json]
+pub(crate) const USAGE: &str = "usage: agent-stats fleet <command> [--json]
+  status                       this fleet's replicas, which one publishes, when each was last reached
+  create [--name N] [--port P] start a fleet with this machine as its first replica
+  replica [--port P]           make this machine a replica of the fleet it joined (or turn this hub into the
+                               fleet's first replica)
+  request <url> [--label L] [--leaf]
+                               ask the fleet at <url> to let this machine in; approve it on any replica (both show
+                               the same 4 digits). Without --leaf this machine then becomes a replica.
+  requests                     join requests waiting here
+  approve <id> | deny <id>     answer a join request
   discover [--timeout 3s]      machines on your tailnet and local network, and whether they run agent-stats
   add --ssh <user@host> [--label L] [--replace]
                                install agent-stats there over SSH and join it to this fleet (no code to type)
@@ -62,15 +72,8 @@ pub fn parse_args(args: &[String]) -> Res<Args> {
     Ok(a)
 }
 
-/// `agent-stats machines <subcommand> [args]`. (`cmd` is the top-level command, `machines`.)
-pub fn main(cmd: &str, args: &[String]) -> ExitCode {
-    if cmd == "fleet" {
-        return replica::main(args);
-    }
-    if cmd != "machines" {
-        eprintln!("unknown command {cmd}");
-        return ExitCode::from(2);
-    }
+/// `agent-stats fleet <subcommand> [args]`.
+pub fn main(args: &[String]) -> ExitCode {
     let Some(sub) = args.first().map(String::as_str) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
@@ -79,10 +82,13 @@ pub fn main(cmd: &str, args: &[String]) -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
+    if !matches!(sub, "discover" | "add" | "invite" | "list" | "remove") {
+        return replica::main(args);
+    }
     let a = match parse_args(&args[1..]) {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("agent-stats machines {sub}: {e}\n\n{USAGE}");
+            eprintln!("agent-stats fleet {sub}: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -91,8 +97,7 @@ pub fn main(cmd: &str, args: &[String]) -> ExitCode {
         "add" => remote::add(&a),
         "invite" => local::invite(&a),
         "list" => local::list(&a),
-        "remove" => remote::remove(&a),
-        _ => Err(format!("unknown command {sub}\n\n{USAGE}")),
+        _ => remote::remove(&a),
     };
     match res {
         Ok(()) => ExitCode::SUCCESS,
@@ -102,7 +107,7 @@ pub fn main(cmd: &str, args: &[String]) -> ExitCode {
             if a.json {
                 println!("{}", serde_json::json!({ "error": e }));
             }
-            eprintln!("agent-stats machines {sub}: {e}");
+            eprintln!("agent-stats fleet {sub}: {e}");
             ExitCode::FAILURE
         }
     }

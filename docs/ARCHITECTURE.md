@@ -73,7 +73,7 @@ Borrowed from how T3 Code runs its server and connects environments (`~/.t3/sour
     Unassigned repos count as `other` in the public payload, so a new private repo never shows up by name.
 12. **Projects are hub config.** `hub.toml` maps repos to public projects (`key`, `name`, `color`, glob patterns on
     repo name or remote). The public payload carries the project list, so a website doesn't hard-code it.
-13. **Adding a machine is one command on a machine with the hub** (`crates/fleet`, `agent-stats machines`).
+13. **Adding a machine is one command on a machine with the hub** (`crates/fleet`, `agent-stats fleet`).
     `discover` merges `tailscale status --json` with Bonjour (`_agent-stats._tcp`; the hub advertises itself with
     `dns-sd -R` or `avahi-publish-service` when it listens beyond loopback, TXT `hubId`, `name`, `node`, `v`, `os`;
     `AGENT_STATS_NO_BONJOUR=1` turns that off) and asks each online candidate for its well-known descriptor; it only

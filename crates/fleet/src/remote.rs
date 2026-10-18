@@ -1,4 +1,4 @@
-//! `machines add --ssh` and `machines remove --ssh`: everything done on another machine goes through the system
+//! `fleet add --ssh` and `fleet remove --ssh`: everything done on another machine goes through the system
 //! `ssh` (so `~/.ssh/config`, agents, 1Password and Tailscale SSH all work), always with `BatchMode=yes` so it never
 //! waits on a prompt, and `StrictHostKeyChecking=accept-new` (a first connection is accepted, a changed key stops
 //! it). Each round trip sends one POSIX script on stdin (`sh -s`): a probe (system, existing install, which of our
@@ -336,14 +336,14 @@ else echo service=systemd; fi
     )
 }
 
-/// `machines add --ssh <target>`. Errors are reported as events; the returned `Err("")` only sets the exit code.
+/// `fleet add --ssh <target>`. Errors are reported as events; the returned `Err("")` only sets the exit code.
 pub fn add(a: &Args) -> Res<()> {
     let out = Out { json: a.json };
     let fail = |step: &str, kind: &str, msg: &str, hint: Option<&str>| -> Res<()> {
         out.error(step, kind, msg, hint);
         Err(String::new())
     };
-    let Some(target) = a.ssh.as_deref() else { return Err("usage: agent-stats machines add --ssh <user@host>".into()) };
+    let Some(target) = a.ssh.as_deref() else { return Err("usage: agent-stats fleet add --ssh <user@host>".into()) };
     if let Err(e) = check_target(target) {
         return fail("connect", "other", &e, None);
     }
@@ -580,10 +580,10 @@ fi
     )
 }
 
-/// `machines remove <machine> [--ssh target]`.
+/// `fleet remove <machine> [--ssh target]`.
 pub fn remove(a: &Args) -> Res<()> {
     let [machine] = a.rest.as_slice() else {
-        return Err("usage: agent-stats machines remove <machine> [--ssh <user@host>]".into());
+        return Err("usage: agent-stats fleet remove <machine> [--ssh <user@host>]".into());
     };
     let out = Out { json: a.json };
     let ctx = HubCtx::open()?;

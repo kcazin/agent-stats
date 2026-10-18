@@ -91,17 +91,17 @@ keeps the newest payload, so an overlap is harmless. The pile is synced, so the 
 
 Three ways, all ending with a machine token in `machine_tokens` (synced to every replica):
 
-1. **Over SSH** (`agent-stats machines add --ssh user@host`): run on a replica. It probes the machine, mints a
+1. **Over SSH** (`agent-stats fleet add --ssh user@host`): run on a replica. It probes the machine, mints a
    pairing code locally, finds a route back to this replica from the target, installs the release there (same
    version as here) with `install.sh --join <route> --code <code>`, and waits for the first report. SSH access is
    the proof of trust; no code is shown.
-2. **A line to paste** (`agent-stats machines invite`): `curl … install.sh | sh -s -- --join <route> --code <code>`.
+2. **A line to paste** (`agent-stats fleet invite`): `curl … install.sh | sh -s -- --join <route> --code <code>`.
 3. **Join request** (a Mac with Tokiscope, no SSH): the new machine runs `agent-stats fleet request <url>`, which
    generates its own token and view token and sends their hashes to `POST /join-request`. Both sides show 4 digits
    (from the request id and the token hash); `agent-stats fleet approve <id>` on any replica enrolls it. The
    requester polls `GET /join-request/<id>?key=<sha256 of token>` until approved. Requests expire after 10 min.
 
-Discovery (`agent-stats machines discover`: `tailscale status --json`, Bonjour `_agent-stats._tcp`) only suggests
+Discovery (`agent-stats fleet discover`: `tailscale status --json`, Bonjour `_agent-stats._tcp`) only suggests
 machines; it never enrolls one. A Mac that runs Tokiscope joins from its own first launch (way 3), so `add --ssh`
 refuses one ("open it there and choose Join").
 
@@ -109,7 +109,7 @@ refuses one ("open it there and choose Join").
 
 All `--json` output is UTF-8 JSON; streams are one JSON object per line.
 
-`agent-stats machines discover [--timeout 3s] --json` → one array:
+`agent-stats fleet discover [--timeout 3s] --json` → one array:
 ```json
 [{"name":"cachyos","host":"cachyos.tail1234.ts.net","addresses":["100.64.0.5"],"os":"linux","sources":["tailscale"],
   "online":true,"self":false,"member":false,
@@ -118,7 +118,7 @@ All `--json` output is UTF-8 JSON; streams are one JSON object per line.
 `os`: `linux`, `macos`, `windows` or null. `agentStats` is null when nothing answers the well-known route on
 port 7777. `member`: the machine's name is a machine of this fleet.
 
-`agent-stats machines add --ssh <target> [--label L] [--replace] [--json]` → lines:
+`agent-stats fleet add --ssh <target> [--label L] [--replace] [--json]` → lines:
 ```json
 {"step":"connect","state":"running","detail":"ssh kcazin@cachyos"}
 {"step":"connect","state":"ok","detail":"Linux x86_64 · systemd · no agent-stats yet"}
@@ -133,12 +133,12 @@ Steps in order: `connect`, `route`, `install`, `join`, `report`, `done`. A failu
 `host-key-changed`, `unreachable`, `unsupported`, `no-route-back`, `taken` (the name is enrolled: retry with
 `--replace`), `other`.
 
-`agent-stats machines invite [--label L] [--json]` → `{"line","url","code","expires"}`.
+`agent-stats fleet invite [--label L] [--json]` → `{"line","url","code","expires"}`.
 
-`agent-stats machines list --json` → `[{"machine","label","role":"replica"|"leaf","online","lastReport","version",
+`agent-stats fleet list --json` → `[{"machine","label","role":"replica"|"leaf","online","lastReport","version",
 "platform","revoked","routes"}]`.
 
-`agent-stats machines remove <machine> [--ssh <target>] [--json]` → revokes it (its token, and its member row if
+`agent-stats fleet remove <machine> [--ssh <target>] [--json]` → revokes it (its token, and its member row if
 it is a replica; both sync); with `--ssh` also uninstalls there. Lines: `revoke`, `uninstall` (with `--ssh`), then
 `{"step":"done","state":"ok","machine"}`.
 

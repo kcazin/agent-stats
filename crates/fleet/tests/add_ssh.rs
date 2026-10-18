@@ -1,4 +1,4 @@
-//! `machines add --ssh` end to end against a real hub on loopback, with a fake `ssh` that runs the remote scripts
+//! `fleet add --ssh` end to end against a real hub on loopback, with a fake `ssh` that runs the remote scripts
 //! here under a temporary `$HOME`, and a fake `agent-stats` there that pairs and reports with curl.
 
 use agent_stats_fleet::{remote, Args};

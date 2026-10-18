@@ -15,13 +15,11 @@ Reporter (every machine):
 Fleet (every Mac a replica, docs/FLEET.md):
   fleet status | create | replica | request <url> | requests | approve <id> | deny <id>   [--json]
                                       start a fleet, make this machine a replica, ask to join, answer requests
+  fleet discover | add --ssh <user@host> | invite | list | remove <machine>   [--json]
+                                      find machines, install and join one over SSH, or print a line to paste
 
 Hub (one machine, or the cloud):
   hub serve | pair [--label L] [--replace M] | machines | revoke <machine> | purge <machine> | repos | projects
-
-Machines (run on a machine with the hub):
-  machines discover | add --ssh <user@host> | invite | list | remove <machine>   [--json]
-                                      find machines, install and join one over SSH, or print a line to paste
 
 Relay (optional public snapshot):
   relay serve
@@ -73,7 +71,7 @@ fn main() -> ExitCode {
         "hub" => agent_stats_hub::main(rest),
         "relay" => agent_stats_relay::main(rest),
         "service" | "update" | "rollback" => agent_stats_ops::main(cmd, rest),
-        "machines" | "fleet" => agent_stats_fleet::main(cmd, rest),
+        "fleet" => agent_stats_fleet::main(rest),
         "version" | "--version" | "-V" => {
             println!("agent-stats {} (protocol {})", agent_stats_common::VERSION, agent_stats_common::PROTOCOL);
             ExitCode::SUCCESS

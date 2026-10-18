@@ -1,4 +1,4 @@
-//! How `machines add` and `remove` say what they are doing: one JSON object per line with `--json` (what Tokiscope
+//! How `fleet add` and `remove` say what they are doing: one JSON object per line with `--json` (what Tokiscope
 //! reads), a short line per step otherwise. Nothing printed here ever contains a pairing code.
 
 use serde_json::{json, Value};
