@@ -4,6 +4,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod bonjour;
 pub mod compute;
 pub mod config;
 pub mod db;
@@ -233,6 +234,22 @@ fn serve(paths: Paths, a: &Args) -> Result<(), String> {
         eprintln!("hub: publishing to {} ({})", t.name, t.url);
     }
     let _ = agent_stats_common::write_status(&hub.status());
+    // On the local network as _agent-stats._tcp, unless only this machine can reach it. Lives as long as `serve`.
+    let node = config::hostname();
+    let node = node.strip_suffix(".local").unwrap_or(&node).to_string();
+    let os = if cfg!(target_os = "macos") { "macos" } else { "linux" };
+    let _bonjour = (!addr.ip().is_loopback())
+        .then(|| {
+            let txt = [
+                ("hubId", hub.hub_id.as_str()),
+                ("name", hub.cfg.name.as_str()),
+                ("node", node.as_str()),
+                ("v", agent_stats_common::VERSION),
+                ("os", os),
+            ];
+            bonjour::advertise(&node, addr.port(), &txt)
+        })
+        .flatten();
     // GitHub contributions: now, then hourly.
     if hub.cfg.github_user.is_some() {
         let h = hub.clone();
