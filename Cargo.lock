@@ -13,6 +13,7 @@ name = "agent-stats"
 version = "0.5.0"
 dependencies = [
  "agent-stats-common",
+ "agent-stats-fleet",
  "agent-stats-hub",
  "agent-stats-ops",
  "agent-stats-relay",
@@ -27,6 +28,21 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "agent-stats-fleet"
+version = "0.5.0"
+dependencies = [
+ "agent-stats-common",
+ "agent-stats-hub",
+ "agent-stats-reporter",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
 ]
 
 [[package]]
