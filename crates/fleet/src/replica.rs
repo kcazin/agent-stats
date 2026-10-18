@@ -167,7 +167,10 @@ fn service(role: &str) -> Res<bool> {
 fn hub_toml(old: &str, mut local: toml::Table, listen: &str, advertise: &[String], fleet: toml::Table) -> Res<String> {
     local.insert("listen".into(), toml::Value::String(listen.into()));
     if !advertise.is_empty() {
-        local.insert("advertise".into(), toml::Value::Array(advertise.iter().cloned().map(toml::Value::String).collect()));
+        local.insert(
+            "advertise".into(),
+            toml::Value::Array(advertise.iter().cloned().map(toml::Value::String).collect()),
+        );
     }
     local.insert("fleet".into(), toml::Value::Table(fleet));
     let body = toml::to_string(&local).map_err(|e| e.to_string())?;
@@ -294,7 +297,13 @@ fn create(o: &Opts) -> Res<()> {
         ),
     )?;
     let aon = always_on();
-    let text = hub_toml("", toml::Table::new(), &format!("0.0.0.0:{port}"), &routes, fleet_table(&node, aon, &[], Some(&token_file)))?;
+    let text = hub_toml(
+        "",
+        toml::Table::new(),
+        &format!("0.0.0.0:{port}"),
+        &routes,
+        fleet_table(&node, aon, &[], Some(&token_file)),
+    )?;
     write(&paths.hub_toml(), &text)?;
     rcfg::write_file(&settings.config_file, &file)?;
     let started = service("hub")?;
@@ -346,7 +355,10 @@ fn replica(o: &Opts) -> Res<()> {
             return Ok(());
         }
         if fleet_id.is_empty() {
-            return Err(format!("{} exists but this hub has never run (no hub id); start it once first", hub_path.display()));
+            return Err(format!(
+                "{} exists but this hub has never run (no hub id); start it once first",
+                hub_path.display()
+            ));
         }
         // The old hub: the fleet's first replica. Its fleet-wide keys move to fleet.toml.
         let (mut local, mut shared) = (toml::Table::new(), toml::Table::new());
@@ -369,7 +381,8 @@ fn replica(o: &Opts) -> Res<()> {
         write(&hub_path.with_extension("toml.bak"), &old)?;
         let listen = local.get("listen").and_then(|l| l.as_str()).unwrap_or("127.0.0.1:7777").to_string();
         let port = o.port.or_else(|| port_of(&listen)).unwrap_or(7777);
-        let loopback_only = listen.starts_with("127.") || listen.starts_with("localhost") || listen.starts_with("[::1]");
+        let loopback_only =
+            listen.starts_with("127.") || listen.starts_with("localhost") || listen.starts_with("[::1]");
         let listen = if loopback_only { format!("0.0.0.0:{port}") } else { listen };
         let advertised: Vec<String> = local
             .get("advertise")
@@ -386,7 +399,13 @@ fn replica(o: &Opts) -> Res<()> {
                 let name = shared.get("name").and_then(|n| n.as_str()).unwrap_or("home").to_string();
                 settings.file = save_entry(
                     &settings,
-                    rcfg::HubEntry { name, id: Some(fleet_id.clone()), routes: advertised.clone(), token_file: Some(t.clone()), view_token_file: Some(v) },
+                    rcfg::HubEntry {
+                        name,
+                        id: Some(fleet_id.clone()),
+                        routes: advertised.clone(),
+                        token_file: Some(t.clone()),
+                        view_token_file: Some(v),
+                    },
                     None,
                 )?;
                 Some(t)
@@ -428,7 +447,13 @@ fn replica(o: &Opts) -> Res<()> {
     write(&paths.hub_id(), &format!("{fleet_id}\n"))?;
     let peers: Vec<String> = entry.routes.iter().filter(|r| !is_loopback_route(r)).cloned().collect();
     let routes = advertise(port);
-    let text = hub_toml("", toml::Table::new(), &format!("0.0.0.0:{port}"), &routes, fleet_table(&node, aon, &peers, entry.token_file.as_deref()))?;
+    let text = hub_toml(
+        "",
+        toml::Table::new(),
+        &format!("0.0.0.0:{port}"),
+        &routes,
+        fleet_table(&node, aon, &peers, entry.token_file.as_deref()),
+    )?;
     write(&hub_path, &text)?;
     let mut file = settings.file.clone();
     loopback_first(&mut file, &fleet_id, port);
@@ -467,12 +492,17 @@ fn get_json(agent: &ureq::Agent, url: &str) -> Res<(u16, Value)> {
 }
 
 fn request(o: &Opts) -> Res<()> {
-    let [url] = o.rest.as_slice() else { return Err("usage: agent-stats fleet request <url> [--label L] [--leaf]".into()) };
+    let [url] = o.rest.as_slice() else {
+        return Err("usage: agent-stats fleet request <url> [--label L] [--leaf]".into());
+    };
     let url = rcfg::normalize_url(url);
     let agent = http();
     let (st, d) = get_json(&agent, &format!("{url}{}", agent_stats_common::WELL_KNOWN))
         .map_err(|e| format!("{url} doesn't answer as agent-stats ({e})"))?;
-    let fleet_id = d["hubId"].as_str().filter(|_| st == 200 && d["role"] == "hub").ok_or(format!("{url} is not an agent-stats hub"))?;
+    let fleet_id = d["hubId"]
+        .as_str()
+        .filter(|_| st == 200 && d["role"] == "hub")
+        .ok_or(format!("{url} is not an agent-stats hub"))?;
     let settings = rcfg::load()?;
     let label = o.label.clone().unwrap_or_else(|| settings.label.clone());
     let token = agent_stats_common::random_hex(32).map_err(|e| e.to_string())?;
@@ -491,7 +521,9 @@ fn request(o: &Opts) -> Res<()> {
     let ans: Value = serde_json::from_str(&res.body_mut().read_to_string().unwrap_or_default()).unwrap_or(Value::Null);
     match status {
         200 => {}
-        404 => return Err(format!("{url} runs an agent-stats without join requests: update it, or ask for a code there")),
+        404 => {
+            return Err(format!("{url} runs an agent-stats without join requests: update it, or ask for a code there"))
+        }
         _ => return Err(format!("{url} answered {status}: {}", ans["error"].as_str().unwrap_or(""))),
     }
     let (Some(id), Some(digits)) = (ans["id"].as_str(), ans["digits"].as_str()) else {
@@ -526,7 +558,8 @@ fn request(o: &Opts) -> Res<()> {
     }
     let (token_file, view_file) = save_tokens(fleet_id, &token, &view)?;
     let mut routes = vec![url.clone()];
-    routes.extend(answer["routes"].as_array().into_iter().flatten().filter_map(|r| r.as_str().map(rcfg::normalize_url)));
+    routes
+        .extend(answer["routes"].as_array().into_iter().flatten().filter_map(|r| r.as_str().map(rcfg::normalize_url)));
     let mut seen: Vec<String> = Vec::new();
     routes.retain(|r| {
         let new = !seen.iter().any(|s| rcfg::same_route(s, r));
@@ -548,7 +581,8 @@ fn request(o: &Opts) -> Res<()> {
     let mut start_hub = false;
     if !o.leaf {
         // Quietly: the outcome is one line below.
-        let quiet = Opts { silent: true, port: o.port, force: o.force, name: Some(fleet_name.clone()), ..Default::default() };
+        let quiet =
+            Opts { silent: true, port: o.port, force: o.force, name: Some(fleet_name.clone()), ..Default::default() };
         replica(&quiet)?;
         start_hub = agent_stats_common::managed_by().is_some();
     }
@@ -575,7 +609,10 @@ fn requests(o: &Opts) -> Res<()> {
     let ctx = HubCtx::open()?;
     let list = fleet::pending(&ctx.db()?, now_ms()).map_err(|e| e.to_string())?;
     if o.json {
-        let v: Vec<Value> = list.into_iter().map(|r| serde_json::from_str(&agent_stats_hub::json::J::Obj(r).stringify()).unwrap_or(Value::Null)).collect();
+        let v: Vec<Value> = list
+            .into_iter()
+            .map(|r| serde_json::from_str(&agent_stats_hub::json::J::Obj(r).stringify()).unwrap_or(Value::Null))
+            .collect();
         println!("{}", Value::Array(v));
         return Ok(());
     }
@@ -626,7 +663,8 @@ fn status(o: &Opts) -> Res<()> {
     let now = now_ms();
     let list = fleet::members(&db).map_err(|e| e.to_string())?;
     let me = ctx.cfg.fleet.as_ref().map(|f| f.node.clone());
-    let publisher = me.as_deref().map(|m| fleet::publisher(&list, m, ctx.cfg.fleet.as_ref().is_some_and(|f| f.always_on), now));
+    let publisher =
+        me.as_deref().map(|m| fleet::publisher(&list, m, ctx.cfg.fleet.as_ref().is_some_and(|f| f.always_on), now));
     let members: Vec<Value> = list
         .iter()
         .map(|m| {
