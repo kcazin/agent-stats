@@ -61,6 +61,7 @@ pub const TABLES: &[Spec] = &[
         quiet: &[],
     },
     Spec { t: "purges", cols: &["machine", "from_day", "to_day", "at"], key: 3, quiet: &[] },
+    Spec { t: "machine_addrs", cols: &["machine", "addr", "seen"], key: 2, quiet: &[] },
     Spec { t: "kv", cols: &["k", "v"], key: 1, quiet: &[] },
 ];
 
@@ -86,6 +87,10 @@ const SCHEMA: &str = "
   -- `hub purge` as a record, so every replica deletes the same rows.
   CREATE TABLE IF NOT EXISTS purges (machine TEXT, from_day TEXT, to_day TEXT, at INTEGER,
     PRIMARY KEY (machine, from_day, to_day));
+  -- The addresses a machine's reports came from (seen at most hourly), so `fleet discover` knows a Tailscale peer is
+  -- a machine of the fleet whatever its names.
+  CREATE TABLE IF NOT EXISTS machine_addrs (machine TEXT NOT NULL, addr TEXT NOT NULL, seen INTEGER NOT NULL,
+    PRIMARY KEY (machine, addr));
 ";
 
 fn key_expr(spec: &Spec, row: &str) -> String {
@@ -269,6 +274,7 @@ fn merge_sql(t: &str) -> &'static [&'static str] {
         "fleet_members" => &["UPDATE fleet_members SET routes = ?2, version = ?3, always_on = ?4, token_hash = ?5,
                                 updated = ?6, revoked = ?7
                                WHERE node IS ?1 AND updated < ?6"],
+        "machine_addrs" => &["UPDATE machine_addrs SET seen = ?3 WHERE machine IS ?1 AND addr IS ?2 AND seen < ?3"],
         "join_requests" => &["UPDATE join_requests SET status = ?9, decided = ?10, by_node = ?11
                                WHERE id IS ?1 AND status = 'pending' AND ?9 IS NOT 'pending'"],
         _ => &[],
@@ -398,6 +404,27 @@ mod tests {
         let after: i64 = a2.query_row("SELECT max(seq) FROM sync_log", [], |r| r.get(0)).unwrap();
         assert_eq!(before, after);
         assert!(seq > 0);
+    }
+
+    #[test]
+    fn report_addresses_travel_and_refresh_hourly() {
+        let (a, mut b) = (db(), db());
+        let ip: std::net::IpAddr = "100.90.44.10".parse().unwrap();
+        let h = 3_600_000.0;
+        crate::fleet::note_addr(&a, "cachyos", ip, 10.0 * h).unwrap();
+        crate::fleet::note_addr(&a, "cachyos", "127.0.0.1".parse().unwrap(), 10.0 * h).unwrap();
+        let (seq, ap) = pull(&a, &mut b, 0);
+        assert_eq!(ap.rows, 1, "loopback is not noted");
+        assert_eq!(crate::fleet::recent_addrs(&b, 11.0 * h).unwrap(), vec!["100.90.44.10".to_string()]);
+        // Within the hour nothing changes (nor is logged); after it, `seen` moves on and travels.
+        crate::fleet::note_addr(&a, "cachyos", ip, 10.5 * h).unwrap();
+        assert_eq!(changes(&a, seq, 100).unwrap().0.len(), 0);
+        crate::fleet::note_addr(&a, "cachyos", ip, 12.0 * h).unwrap();
+        assert_eq!(pull(&a, &mut b, seq).1.rows, 1);
+        let seen: i64 = b.query_row("SELECT seen FROM machine_addrs", [], |r| r.get(0)).unwrap();
+        assert_eq!(seen, (12.0 * h) as i64);
+        // Thirty days on, it no longer counts.
+        assert!(crate::fleet::recent_addrs(&b, 12.0 * h + 31.0 * 24.0 * h).unwrap().is_empty());
     }
 
     #[test]

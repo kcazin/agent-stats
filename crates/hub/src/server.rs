@@ -490,6 +490,12 @@ impl Hub {
         }
         match self.ingest(&r, auth) {
             Ok(()) => {
+                if req.header("x-forwarded-for").is_none() {
+                    let now = self.clock.now();
+                    if let Err(e) = crate::fleet::note_addr(&lock(&self.db), &r.machine, req.peer, now) {
+                        eprintln!("hub: address of {}: {e}", r.machine);
+                    }
+                }
                 self.note_change();
                 Response::json(200, r#"{"ok":true}"#)
             }

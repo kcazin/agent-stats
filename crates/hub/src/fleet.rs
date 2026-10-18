@@ -539,6 +539,26 @@ pub fn decide(db: &mut Connection, id: &str, approve: bool, by: &str, now: f64) 
     Ok(machine)
 }
 
+/// A report from `machine` came from `ip` (not loopback, no proxy in between): noted, at most once an hour.
+pub fn note_addr(db: &Connection, machine: &str, ip: std::net::IpAddr, now: f64) -> rusqlite::Result<()> {
+    if ip.is_loopback() || ip.is_unspecified() {
+        return Ok(());
+    }
+    db.execute(
+        "INSERT INTO machine_addrs VALUES (?1, ?2, ?3) ON CONFLICT DO UPDATE SET seen = excluded.seen
+          WHERE seen < excluded.seen - 3600000",
+        params![machine, ip.to_string(), now as i64],
+    )?;
+    Ok(())
+}
+
+/// The addresses machines of the fleet reported from in the last 30 days.
+pub fn recent_addrs(db: &Connection, now: f64) -> rusqlite::Result<Vec<String>> {
+    let mut st = db.prepare("SELECT DISTINCT addr FROM machine_addrs WHERE seen >= ?")?;
+    let rows = st.query_map(params![now as i64 - 30 * 86_400_000], |r| r.get(0))?;
+    rows.collect()
+}
+
 /// `hub purge` as a record every replica applies.
 pub fn record_purge(
     db: &Connection,

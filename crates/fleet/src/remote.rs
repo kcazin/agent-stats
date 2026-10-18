@@ -313,26 +313,30 @@ fn tail(s: &str) -> String {
 }
 
 /// Joins with the code inside the script (stdin), and installs the reporter service unless one is there.
-fn join_script(url: &str, code: &str, label: &str) -> String {
+/// `relabel`: the label was given (`--label`, or kept by `--replace`), so it goes into the reporter's service even
+/// when one is installed already.
+fn join_script(url: &str, code: &str, label: &str, relabel: bool) -> String {
     format!(
         r#"set -eu
 URL={url}
 CODE={code}
 LABEL={label}
+RELABEL={relabel}
 B="$HOME/.local/share/agent-stats/current/agent-stats"
 [ -x "$B" ] || B="$HOME/.local/bin/agent-stats"
 [ -x "$B" ] || B=$(command -v agent-stats)
 "$B" join "$URL" --code "$CODE" >&2
 if [ "$(uname -s)" = Darwin ]; then f="$HOME/Library/LaunchAgents/dev.agent-stats.report.plist"
 else f="${{XDG_CONFIG_HOME:-$HOME/.config}}/systemd/user/agent-stats-reporter.service"; fi
-[ -f "$f" ] || "$B" service install report --label "$LABEL" >&2
+if [ ! -f "$f" ] || [ "$RELABEL" = 1 ]; then "$B" service install report --label "$LABEL" >&2; fi
 if [ "$(uname -s)" = Darwin ]; then echo service=launchd
 elif loginctl show-user "$(id -un)" -p Linger 2>/dev/null | grep -q '=yes'; then echo service=systemd-linger
 else echo service=systemd; fi
 "#,
         url = sh_quote(url),
         code = sh_quote(code),
-        label = sh_quote(label)
+        label = sh_quote(label),
+        relabel = u8::from(relabel)
     )
 }
 
@@ -429,6 +433,7 @@ pub fn add(a: &Args) -> Res<()> {
     let enrolled = ctx.db().and_then(|db| agent_stats_hub::auth::is_enrolled(&db, &name).map_err(|e| e.to_string()));
     // A machine added again keeps its label, unless --label gives another.
     let kept = if a.replace { ctx.db().ok().and_then(|db| crate::local::label_of(&db, &name)) } else { None };
+    let relabel = a.label.is_some() || kept.is_some();
     let label = a.label.clone().or(kept).unwrap_or_else(|| name.clone());
     match enrolled {
         Ok(true) if !a.replace => {
@@ -507,7 +512,8 @@ pub fn add(a: &Args) -> Res<()> {
         Ok(c) => c,
         Err(e) => return fail("join", "other", &format!("pairing code: {e}"), None),
     };
-    let r = match ssh(target, "sh -s", join_script(&route, &code, &label).as_bytes(), Duration::from_secs(120)) {
+    let r = match ssh(target, "sh -s", join_script(&route, &code, &label, relabel).as_bytes(), Duration::from_secs(120))
+    {
         Ok(r) => r,
         Err(e) => return fail("join", "other", &format!("join on {host}: {e}"), None),
     };
@@ -703,8 +709,9 @@ mod tests {
 
     #[test]
     fn the_join_script_carries_the_code_only_inside() {
-        let s = join_script("http://mini:7777", "K7Q2-9XMD", "Bob's box");
+        let s = join_script("http://mini:7777", "K7Q2-9XMD", "Bob's box", false);
         assert!(s.contains("CODE='K7Q2-9XMD'"));
         assert!(s.contains(r"LABEL='Bob'\''s box'"));
+        assert!(s.contains("RELABEL=0"));
     }
 }

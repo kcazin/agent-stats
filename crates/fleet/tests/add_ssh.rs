@@ -88,12 +88,24 @@ fn add_over_ssh_installs_joins_and_waits_for_the_first_report() {
     assert!(agent_stats_hub::auth::is_enrolled(&db, &name).unwrap());
     assert!(agent_stats_fleet::local::last_seen(&db, &name).is_some());
 
-    // Again: the name is taken, unless --replace, which keeps the label it was given here.
+    // Again: the name is taken, unless --replace, which keeps the label it was given here, even into a reporter
+    // service that is installed already.
     assert_eq!(remote::add(&a), Err(String::new()));
     db.execute("UPDATE machines SET label = 'Linux workstation' WHERE machine = ?", [&name]).unwrap();
+    for unit in
+        ["Library/LaunchAgents/dev.agent-stats.report.plist", ".config/systemd/user/agent-stats-reporter.service"]
+    {
+        std::fs::create_dir_all(home.join(unit).parent().unwrap()).unwrap();
+        std::fs::write(home.join(unit), "").unwrap();
+    }
     let a = Args { replace: true, ..a };
     assert_eq!(remote::add(&a), Ok(()));
     let log = std::fs::read_to_string(home.join("service.log")).unwrap();
     assert!(log.lines().last().unwrap().ends_with("--label Linux workstation"), "{log}");
+    // --label renames it.
+    let a = Args { label: Some("Workstation".into()), ..a };
+    assert_eq!(remote::add(&a), Ok(()));
+    let log = std::fs::read_to_string(home.join("service.log")).unwrap();
+    assert!(log.lines().last().unwrap().ends_with("--label Workstation"), "{log}");
     let _ = std::fs::remove_dir_all(&root);
 }

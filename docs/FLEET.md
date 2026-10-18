@@ -61,6 +61,7 @@ them), so replicas merge by union with fixed rules and never conflict:
 | fleet_members | node | newest `updated` wins |
 | join_requests | id | approved/denied beat pending |
 | purges | machine, from, to | insert; deletes the matching usage/repos rows where applied |
+| machine_addrs | machine, addr | newest `seen` (a report's source address, refreshed at most hourly) |
 | kv `pile`, `fleet_config` | key | newest `at` / `stamp` wins |
 
 Triggers write each changed key into `sync_log(seq, tbl, k)` (one entry per key, its seq bumped on change; an
@@ -116,7 +117,9 @@ All `--json` output is UTF-8 JSON; streams are one JSON object per line.
   "agentStats":{"url":"http://cachyos.tail1234.ts.net:7777","role":"hub","fleetId":"…","name":"home","node":"cachyos","version":"0.6.0"}}]
 ```
 `os`: `linux`, `macos`, `windows` or null. `agentStats` is null when nothing answers the well-known route on
-port 7777. `member`: the machine's name is a machine of this fleet.
+port 7777. `member`: the machine is one of this fleet's: its hub answers with our fleet id, its name is a machine's,
+or a machine reported from one of its addresses in the last 30 days (so `cachy` on the tailnet matches the
+`cachyos-x8664` it reports as).
 
 `agent-stats fleet add --ssh <target> [--label L] [--replace] [--json]` → lines:
 ```json

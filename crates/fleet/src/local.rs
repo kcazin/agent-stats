@@ -79,6 +79,12 @@ impl HubCtx {
         out
     }
 
+    /// Addresses the fleet's machines reported from lately.
+    pub fn member_addrs(&self) -> HashSet<String> {
+        let Ok(db) = self.db() else { return HashSet::new() };
+        agent_stats_hub::fleet::recent_addrs(&db, now_ms()).map(|v| v.into_iter().collect()).unwrap_or_default()
+    }
+
     /// Routes another machine might reach this hub at, best first: what the hub advertises, then its Tailscale name
     /// and addresses, `<hostname>.local`, and its LAN addresses. Loopback routes are left out (useless from there).
     pub fn routes_back(&self) -> Vec<String> {

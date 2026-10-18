@@ -376,14 +376,16 @@ pub fn discover(limit: Duration) -> Vec<Candidate> {
             cands[i].agent_stats = d;
         }
     }
-    // Members: names this machine's hub knows, or a descriptor with our fleet id.
-    let (members, fleet) = match crate::local::HubCtx::open() {
-        Ok(ctx) => (ctx.member_names(), Some(ctx.hub_id.clone())),
+    // Members: a descriptor with our fleet id, names this machine's hub knows, or an address a machine of the fleet
+    // reported from (a Linux box called `cachy` on the tailnet may report as `cachyos-x8664`).
+    let (members, addrs, fleet) = match crate::local::HubCtx::open() {
+        Ok(ctx) => (ctx.member_names(), ctx.member_addrs(), Some(ctx.hub_id.clone())),
         Err(_) => Default::default(),
     };
     for c in &mut cands {
         let ours = fleet.is_some() && c.agent_stats.as_ref().and_then(|a| a["fleetId"].as_str()) == fleet.as_deref();
-        c.member = ours || members.contains(&norm_name(&c.name));
+        c.member =
+            ours || members.contains(&norm_name(&c.name)) || c.addresses.iter().any(|a| addrs.contains(a.as_str()));
     }
     // Online first, then by name; this machine last.
     cands.sort_by(|a, b| (a.me, !a.online, &a.name).cmp(&(b.me, !b.online, &b.name)));
