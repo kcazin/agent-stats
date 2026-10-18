@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats-fleet"
-version = "0.6.0"
+version = "0.6.0-rc.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "agent-stats fleet: find machines, add them over SSH or with a line to paste, list and remove them"

@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats-hub"
-version = "0.6.0"
+version = "0.6.0-rc.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "The agent-stats hub: receives reports, keeps history, serves the dashboard, publishes the public payload"

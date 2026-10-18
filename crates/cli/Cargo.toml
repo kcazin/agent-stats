@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats"
-version = "0.6.0"
+version = "0.6.0-rc.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "One binary for every agent-stats role: report, hub, relay, plus install and updates"
