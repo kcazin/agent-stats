@@ -15,6 +15,8 @@ pub const BACKOFF_MIN: Duration = Duration::from_secs(1);
 pub const BACKOFF_MAX: Duration = Duration::from_secs(300);
 /// While on a later route, look for an earlier (preferred) one this often.
 pub const REPROBE: Duration = Duration::from_secs(300);
+/// Routes a hub entry may grow to by learning a fleet's replicas.
+pub const MAX_ROUTES: usize = 16;
 /// `POST /report` and `POST /pair`.
 pub const POST_TIMEOUT: Duration = Duration::from_secs(10);
 /// `GET /.well-known/agent-stats`: small, so a dead route costs little.
@@ -72,6 +74,11 @@ pub struct Descriptor {
     /// The zone the hub counts days in (hubs before 0.5 don't say).
     #[serde(default)]
     pub timezone: Option<String>,
+    /// A fleet replica's name, and the routes of every replica of its fleet (docs/FLEET.md).
+    #[serde(default)]
+    pub node: Option<String>,
+    #[serde(default)]
+    pub fleet_routes: Vec<String>,
 }
 
 /// A response body, shortened for messages.
@@ -293,6 +300,8 @@ pub struct Link {
     pub sent_sig: Option<u64>,
     /// The last error that was logged, to log each kind once.
     pub logged: Option<String>,
+    /// Routes of other replicas of this hub's fleet, learned from its descriptor and not yet saved to config.toml.
+    pub learned: Vec<String>,
 }
 
 impl Link {
@@ -310,6 +319,7 @@ impl Link {
             last_sent: None,
             sent_sig: None,
             logged: None,
+            learned: Vec::new(),
         }
     }
 
@@ -330,13 +340,32 @@ impl Link {
             return Ok(if upto < self.hub.routes.len() { 0 } else { self.start % self.hub.routes.len() });
         };
         let mut errors = Vec::new();
-        for (i, r) in self.hub.routes.iter().enumerate().take(upto) {
-            match well_known(http, r).and_then(|d| check(&d, &id)) {
-                Ok(()) => return Ok(i),
+        let routes: Vec<String> = self.hub.routes.iter().take(upto).cloned().collect();
+        for (i, r) in routes.iter().enumerate() {
+            match well_known(http, r).and_then(|d| check(&d, &id).map(|()| d)) {
+                Ok(d) => {
+                    self.learn(&d.fleet_routes);
+                    return Ok(i);
+                }
                 Err(e) => errors.push(format!("{r}: {e}")),
             }
         }
         Err(errors.join("; "))
+    }
+
+    /// A fleet's other replicas: their routes go after the ones this hub entry has (each is verified by id before
+    /// it gets a report, like any route), so a reporter whose replica is away reports to another.
+    fn learn(&mut self, routes: &[String]) {
+        for r in routes {
+            let r = crate::config::normalize_url(r);
+            if self.hub.routes.len() >= MAX_ROUTES {
+                break;
+            }
+            if !r.is_empty() && !self.hub.routes.iter().any(|o| crate::config::same_route(o, &r)) {
+                self.hub.routes.push(r.clone());
+                self.learned.push(r);
+            }
+        }
     }
 
     /// Picks the route to use. A hub with an id re-verifies the route in use (route 0 included) at least every
@@ -499,6 +528,33 @@ pub(crate) mod tests {
     pub fn dead_url() -> String {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         format!("http://{}", l.local_addr().unwrap())
+    }
+
+    #[test]
+    fn learns_the_other_replicas_of_a_fleet_and_fails_over_to_them() {
+        let http = Http::new();
+        let air = hub_server("abc", 200);
+        let air_url = air.url.clone();
+        let mini = serve(move |r| match (r.method.as_str(), r.path.as_str()) {
+            ("GET", WELL_KNOWN) => (
+                200,
+                format!(
+                    r#"{{"role":"hub","hubId":"abc","node":"mini","fleetRoutes":["http://mini.example:7777","{air_url}/"]}}"#
+                ),
+            ),
+            ("POST", "/report") => (200, r#"{"ok":true}"#.into()),
+            _ => (404, String::new()),
+        });
+        let mut l = Link::new(hub("home", Some("abc"), &[&mini.url]));
+        l.attempt(&http, b"{}", Instant::now()).unwrap();
+        assert_eq!(l.hub.routes, [mini.url.clone(), "http://mini.example:7777".into(), air.url.clone()]);
+        assert_eq!(l.learned.len(), 2);
+        // The replica it joined goes away: the next report goes to one it learned.
+        l.hub.routes[0] = dead_url();
+        l.route = None;
+        l.next_try = None;
+        l.attempt(&http, b"{}", Instant::now()).unwrap();
+        assert_eq!(l.route_url(), Some(air.url.as_str()));
     }
 
     #[test]
