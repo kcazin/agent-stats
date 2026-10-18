@@ -75,6 +75,11 @@ schema is upgraded.
 - Each replica pulls from every other non-revoked member with routes, every 2 s while it answers (backoff 2 s → 1
   min when it doesn't), and stores a cursor per peer in `sync_cursors`. Whatever it pulls it serves onward.
 - After rows arrive, the dashboard streams update as after a report.
+- `/sync/*` takes a replica token or any machine token of the fleet (a machine introduces its replica with its
+  reporting token). So a leaf *could* pull everything if someone made it ask: leaves are a default that keeps other
+  machines' repo names off boxes nobody looks at, not a wall between machines you own.
+- A replica on an older agent-stats (no `/sync`) is skipped with "update it"; the newer one keeps saying hello until
+  it answers, then the older one, once updated, pulls everything it missed.
 
 ## Publishing
 
