@@ -145,7 +145,7 @@ fn service(role: &str) -> Res<bool> {
 }
 
 /// hub.toml for a replica: what the old file had that belongs to this machine (fleet-wide keys go to fleet.toml),
-/// the listen address, the routes it advertises and `[fleet]`. A first comment line (an app's marker) stays first.
+/// the listen address, the routes it advertises and `[fleet]`. An app's marker line ("# Written by Tokiscope.") stays first.
 fn hub_toml(old: &str, mut local: toml::Table, listen: &str, advertise: &[String], fleet: toml::Table) -> Res<String> {
     local.insert("listen".into(), toml::Value::String(listen.into()));
     if !advertise.is_empty() {
@@ -156,7 +156,8 @@ fn hub_toml(old: &str, mut local: toml::Table, listen: &str, advertise: &[String
     }
     local.insert("fleet".into(), toml::Value::Table(fleet));
     let body = toml::to_string(&local).map_err(|e| e.to_string())?;
-    let marker = old.lines().next().filter(|l| l.starts_with('#')).map(|l| format!("{l}\n")).unwrap_or_default();
+    let marker =
+        old.lines().next().filter(|l| l.starts_with("# Written by ")).map(|l| format!("{l}\n")).unwrap_or_default();
     Ok(format!(
         "{marker}# A replica of an agent-stats fleet: settings for this machine. The fleet's own settings (name,\n\
          # timezone, projects, publish) are in fleet.toml, which every replica shares. See docs/FLEET.md.\n{body}"

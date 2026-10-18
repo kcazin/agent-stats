@@ -426,8 +426,10 @@ pub fn add(a: &Args) -> Res<()> {
     out.ok("route", &format!("{route} answered from {host}"));
 
     let name = machine_name(&p);
-    let label = a.label.clone().unwrap_or_else(|| name.clone());
     let enrolled = ctx.db().and_then(|db| agent_stats_hub::auth::is_enrolled(&db, &name).map_err(|e| e.to_string()));
+    // A machine added again keeps its label, unless --label gives another.
+    let kept = if a.replace { ctx.db().ok().and_then(|db| crate::local::label_of(&db, &name)) } else { None };
+    let label = a.label.clone().or(kept).unwrap_or_else(|| name.clone());
     match enrolled {
         Ok(true) if !a.replace => {
             return fail(

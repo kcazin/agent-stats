@@ -273,6 +273,16 @@ pub fn last_seen(db: &Connection, machine: &str) -> Option<f64> {
         .map(|v| v as f64)
 }
 
+/// The label `machine` reports under here, if it has one.
+pub fn label_of(db: &Connection, machine: &str) -> Option<String> {
+    db.query_row("SELECT label FROM machines WHERE machine = ?", params![machine], |r| r.get::<_, Option<String>>(0))
+        .optional()
+        .ok()
+        .flatten()
+        .flatten()
+        .filter(|l| !l.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

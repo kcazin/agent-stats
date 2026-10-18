@@ -41,7 +41,7 @@ case $1 in
       -d "{\"protocol\":2,\"machine\":\"$M\",\"label\":\"$M\",\"platform\":\"test\",\"version\":\"9.9.9\",\"at\":$AT,\"full\":false,\"days\":[],\"repos\":[],\"sessions\":[]}" \
       "$URL/report" >/dev/null || exit 1
     echo "joined $URL" ;;
-  service) echo "fake service $*" ;;
+  service) echo "$*" >> "$HOME/service.log"; echo "fake service $*" ;;
 esac
 "#;
 
@@ -88,9 +88,12 @@ fn add_over_ssh_installs_joins_and_waits_for_the_first_report() {
     assert!(agent_stats_hub::auth::is_enrolled(&db, &name).unwrap());
     assert!(agent_stats_fleet::local::last_seen(&db, &name).is_some());
 
-    // Again: the name is taken, unless --replace.
+    // Again: the name is taken, unless --replace, which keeps the label it was given here.
     assert_eq!(remote::add(&a), Err(String::new()));
+    db.execute("UPDATE machines SET label = 'Linux workstation' WHERE machine = ?", [&name]).unwrap();
     let a = Args { replace: true, ..a };
     assert_eq!(remote::add(&a), Ok(()));
+    let log = std::fs::read_to_string(home.join("service.log")).unwrap();
+    assert!(log.lines().last().unwrap().ends_with("--label Linux workstation"), "{log}");
     let _ = std::fs::remove_dir_all(&root);
 }
