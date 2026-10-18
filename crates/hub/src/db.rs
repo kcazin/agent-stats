@@ -99,6 +99,7 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         "INSERT OR IGNORE INTO repo_meta (repo, first_seen, first_day, first_machine)
            SELECT repo, NULL, min(day), min(machine) FROM repos WHERE repo IS NOT NULL GROUP BY repo",
     )?;
+    crate::sync::ensure_schema(&db)?;
     let v: Option<String> = db.query_row("SELECT v FROM kv WHERE k = 'schema_version'", [], |r| r.get(0)).optional()?;
     if v.and_then(|v| v.parse::<i64>().ok()).unwrap_or(1) < SCHEMA_VERSION {
         db.execute("INSERT OR REPLACE INTO kv VALUES ('schema_version', ?)", params![SCHEMA_VERSION.to_string()])?;

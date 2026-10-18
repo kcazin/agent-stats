@@ -93,6 +93,7 @@ fn rig(name: &str, extra_toml: &str, insecure: bool) -> Rig {
         clock,
         github: None,
         publish_on_change: false,
+        exit_on_config_change: false,
     };
     let (hub, addr) = agent_stats_hub::start(cfg, paths.clone(), opts).unwrap();
     Rig { hub, base: format!("http://{addr}"), paths, dir }

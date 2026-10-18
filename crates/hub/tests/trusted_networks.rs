@@ -35,6 +35,7 @@ trusted_networks = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
         clock: Clock::real(),
         github: None,
         publish_on_change: false,
+        exit_on_config_change: false,
     };
     let hub = Hub::open(cfg, paths, opts).unwrap();
 

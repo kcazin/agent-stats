@@ -43,8 +43,14 @@ fn rig(name: &str) -> Rig {
     let cfg = Config::parse(&paths, toml).unwrap();
     let clock = server::Clock::real();
     clock.set(NOW);
-    let opts =
-        server::Options { insecure_no_auth: false, test_hooks: false, clock, github: None, publish_on_change: false };
+    let opts = server::Options {
+        insecure_no_auth: false,
+        test_hooks: false,
+        clock,
+        github: None,
+        publish_on_change: false,
+        exit_on_config_change: false,
+    };
     let (hub, addr) = agent_stats_hub::start(cfg, paths.clone(), opts).unwrap();
     let base = format!("http://{addr}");
     let code = {

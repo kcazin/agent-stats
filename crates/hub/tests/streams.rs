@@ -37,8 +37,14 @@ fn rig(name: &str, extra_toml: &str) -> Rig {
     cfg.legacy_token = Some("secret".into());
     let clock = server::Clock::real();
     clock.set(NOW);
-    let opts =
-        server::Options { insecure_no_auth: false, test_hooks: false, clock, github: None, publish_on_change: true };
+    let opts = server::Options {
+        insecure_no_auth: false,
+        test_hooks: false,
+        clock,
+        github: None,
+        publish_on_change: true,
+        exit_on_config_change: false,
+    };
     let (hub, addr) = agent_stats_hub::start(cfg, paths.clone(), opts).unwrap();
     Rig { hub, addr, paths, dir }
 }
