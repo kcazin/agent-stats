@@ -520,6 +520,7 @@ impl App {
                 results.push((i, h.join().unwrap_or_else(|_| Err("sending panicked".into()))));
             }
         });
+        self.save_learned_routes();
         let mut all = due.len() == self.links.len();
         for (i, res) in results {
             let link = &mut self.links[i];
@@ -554,6 +555,36 @@ impl App {
             }
         }
         all
+    }
+
+    /// Adds the replica routes hubs taught (see `Link::learn`) to their entries in config.toml, so a restarted
+    /// reporter still knows them when the replica it joined is away. Only the entry of the same hub id changes.
+    fn save_learned_routes(&mut self) {
+        if self.cfg.output != Output::Send || self.links.iter().all(|l| l.learned.is_empty()) {
+            return;
+        }
+        let path = crate::config::config_file();
+        let Ok(mut file) = crate::config::read_file(&path) else { return };
+        let mut changed = false;
+        for l in self.links.iter_mut().filter(|l| !l.learned.is_empty()) {
+            let learned = std::mem::take(&mut l.learned);
+            let Some(entry) = file.hubs.iter_mut().find(|e| e.id.is_some() && e.id == l.hub.id) else { continue };
+            for r in learned {
+                if !entry.routes.iter().any(|o| crate::config::same_route(o, &r)) {
+                    entry.routes.push(r.clone());
+                    changed = true;
+                    log(&format!("hub {}: learned another replica's route {r}", l.hub.name));
+                }
+            }
+        }
+        if changed {
+            if let Err(e) = crate::config::write_file(&path, &file) {
+                log(&format!("config: could not save learned routes: {e}"));
+            }
+        }
+        // config.toml now matches what the links have, so the reload it triggers keeps them as they are.
+        let hubs: Vec<Hub> = self.links.iter().map(|l| l.hub.clone()).collect();
+        self.cfg.hubs = hubs;
     }
 
     /// Writes the status file at start, when a hub's result changed, and at least every `HEARTBEAT_SECS`.

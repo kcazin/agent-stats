@@ -4,14 +4,19 @@
 #   curl -fsSL https://raw.githubusercontent.com/kcazin/agent-stats/main/install.sh | sh -s -- "MacBook Air"
 #   ./install.sh "MacBook Air"            # from a checkout; builds from source if there is no release
 #
-# usage: install.sh [label] [--hub] [--no-service] [--no-auto-update] [--from-source]
+# usage: install.sh [label] [--hub] [--no-service] [--no-auto-update] [--from-source] [--version V]
+#                   [--archive FILE] [--join URL --code CODE]
 #   label          what dashboards show for this machine (default: the hostname)
 #   --hub          also install the hub service on this machine
 #   --no-service   install the binary only, no service
 #   --no-auto-update  skip the scheduled updater (it runs `update --auto` every 15 minutes)
 #   --from-source  build with cargo from the checkout instead of downloading a release
+#   --version V    that release instead of the latest
+#   --archive FILE a release archive already on this machine, checked against the SHA256SUMS beside it
+#   --join URL --code CODE   then join that hub or fleet (the line `agent-stats fleet invite` prints)
 #
-# Releases are downloaded over HTTPS (curl or wget), or with `gh` when that fails (a private fork).
+# Releases are downloaded over HTTPS (curl or wget), or with `gh` when that fails (a private fork). Exit status 3:
+# no release could be downloaded (`agent-stats fleet add` then uploads the archive and retries with --archive).
 # Env: AGENT_STATS_REPO overrides the repository (default kcazin/agent-stats).
 set -eu
 
@@ -21,8 +26,12 @@ WITH_HUB=0
 WITH_SERVICE=1
 AUTO_UPDATE=1
 FROM_SOURCE=0
+VERSION=""
+ARCHIVE=""
+JOIN_URL=""
+JOIN_CODE=""
 
-usage() { sed -n '2,14p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' >&2 || true; }
+usage() { sed -n '2,20p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' >&2 || true; }
 die() { echo "install.sh: $*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
@@ -31,6 +40,10 @@ while [ $# -gt 0 ]; do
     --no-service) WITH_SERVICE=0 ;;
     --no-auto-update) AUTO_UPDATE=0 ;;
     --from-source) FROM_SOURCE=1 ;;
+    --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION=${2#v}; shift ;;
+    --archive) [ $# -ge 2 ] || die "--archive needs a file"; ARCHIVE=$2; shift ;;
+    --join) [ $# -ge 2 ] || die "--join needs a hub URL"; JOIN_URL=$2; shift ;;
+    --code) [ $# -ge 2 ] || die "--code needs a value"; JOIN_CODE=$2; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) usage; die "unknown option $1" ;;
     *) [ -z "$LABEL" ] || die "more than one label given"; LABEL=$1 ;;
@@ -38,6 +51,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$LABEL" ] || LABEL=$(hostname -s 2>/dev/null || hostname)
+if [ -n "$JOIN_URL" ] && [ -z "$JOIN_CODE" ]; then die "--join needs --code (from agent-stats fleet invite)"; fi
+if [ -z "$JOIN_URL" ] && [ -n "$JOIN_CODE" ]; then die "--code needs --join URL"; fi
+if [ -n "$JOIN_URL" ] && [ "$WITH_SERVICE" = 0 ]; then die "--join needs the reporter service (drop --no-service)"; fi
 
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) TARGET=x86_64-unknown-linux-gnu ;;
@@ -87,9 +103,10 @@ fetch() { # url file
   else return 1; fi
 }
 
-# The latest release over HTTPS: SHA256SUMS names this platform's archive, then the archive itself.
+# The release over HTTPS (the latest, or --version): SHA256SUMS names this platform's archive, then the archive.
 download_https() {
-  base="https://github.com/$REPO/releases/latest/download"
+  if [ -n "$VERSION" ]; then base="https://github.com/$REPO/releases/download/v$VERSION"
+  else base="https://github.com/$REPO/releases/latest/download"; fi
   fetch "$base/SHA256SUMS" "$TMP/SHA256SUMS" || return 1
   asset=$(sed -n "s/^[0-9a-f]\{64\}  \(agent-stats-[^ ]*-$TARGET\.tar\.gz\)\$/\1/p" "$TMP/SHA256SUMS" | head -n 1)
   [ -n "$asset" ] || { echo "the latest release has no build for $TARGET" >&2; return 1; }
@@ -101,14 +118,22 @@ download_gh() {
   command -v gh >/dev/null 2>&1 || return 1
   # `gh auth token`, not `gh auth status`: status fails when any stored account is broken, even an inactive one.
   gh auth token >/dev/null 2>&1 || { echo "gh is not logged in (gh auth login)" >&2; return 1; }
-  echo "downloading the latest release for $TARGET from $REPO with gh" >&2
-  gh release download --repo "$REPO" --pattern "agent-stats-*-$TARGET.tar.gz" --pattern SHA256SUMS --dir "$TMP" >&2 || return 1
+  echo "downloading ${VERSION:-the latest} release for $TARGET from $REPO with gh" >&2
+  gh release download ${VERSION:+"v$VERSION"} --repo "$REPO" --pattern "agent-stats-*-$TARGET.tar.gz" --pattern SHA256SUMS --dir "$TMP" >&2 || return 1
+}
+
+# --archive: the archive and the SHA256SUMS beside it (as `agent-stats fleet add` uploads them).
+use_archive() {
+  [ -f "$ARCHIVE" ] || die "--archive $ARCHIVE: no such file"
+  sums="$(dirname "$ARCHIVE")/SHA256SUMS"
+  [ -f "$sums" ] || die "--archive: no SHA256SUMS beside $ARCHIVE"
+  cp "$ARCHIVE" "$TMP/" && cp "$sums" "$TMP/SHA256SUMS"
 }
 
 download_release() {
-  download_https || download_gh || return 1
+  if [ -n "$ARCHIVE" ]; then use_archive; else download_https || download_gh || return 1; fi
   asset=$(cd "$TMP" && ls agent-stats-*-"$TARGET".tar.gz 2>/dev/null | head -n 1)
-  [ -n "$asset" ] || return 1
+  [ -n "$asset" ] || { [ -z "$ARCHIVE" ] || die "--archive $ARCHIVE is not a build for $TARGET"; return 1; }
   want=$(grep "  $asset\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)
   [ -n "$want" ] || die "SHA256SUMS has no entry for $asset"
   [ "$(sha256_of "$TMP/$asset")" = "$want" ] || die "checksum mismatch for $asset"
@@ -128,7 +153,8 @@ elif ! download_release; then
     echo "no release available; building from source" >&2
     build_from_source
   else
-    die "could not download a release for $TARGET from $REPO. In a checkout with cargo, use --from-source."
+    echo "install.sh: could not download ${VERSION:+release $VERSION }for $TARGET from $REPO. In a checkout with cargo, use --from-source." >&2
+    exit 3
   fi
 fi
 
@@ -138,6 +164,19 @@ if [ "$WITH_SERVICE" = 1 ]; then
   if [ "$AUTO_UPDATE" = 1 ]; then "$BIN" service install updater; fi
 else
   "$BIN" update --from "$BIN" --no-restart
+fi
+
+if [ -n "$JOIN_URL" ]; then
+  # The installed binary (versions/<v>/ through `current`), not the copy in the temp dir that is about to go.
+  AS="$DATA_HOME/current/agent-stats"
+  [ -x "$AS" ] || AS=$BIN
+  "$AS" join "$JOIN_URL" --code "$JOIN_CODE"
+  cat <<JOINED
+
+agent-stats is installed ($("$AS" version)) and joined $JOIN_URL.
+Check everything with: agent-stats status      (and: agent-stats doctor)
+JOINED
+  exit 0
 fi
 
 cat <<NEXT

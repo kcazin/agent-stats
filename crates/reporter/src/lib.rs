@@ -4,7 +4,7 @@
 
 mod app;
 mod cli;
-mod config;
+pub mod config;
 mod git;
 mod hub;
 mod ingest;
@@ -17,3 +17,4 @@ mod state;
 mod t3;
 
 pub use cli::cli_main;
+pub use report::platform;

@@ -91,10 +91,16 @@ jobs:
             assets/agent-stats-*.tar.gz
             assets/SHA256SUMS
           generate_release_notes: true
+          # A tag like v0.6.0-rc.1 is a pre-release: never "latest", so no updater, install.sh or Tokiscope pin picks
+          # it up; install it with `install.sh --version 0.6.0-rc.1` or `agent-stats update --version 0.6.0-rc.1`.
+          prerelease: ${{ contains(needs.check.outputs.version, '-') }}
+          make_latest: ${{ !contains(needs.check.outputs.version, '-') }}
 
   relay:
-    # Redeploys the public relay on Railway from the tagged commit. No-op without the RAILWAY_TOKEN secret.
+    # Redeploys the public relay on Railway from the tagged commit. No-op without the RAILWAY_TOKEN secret, and for a
+    # pre-release.
     needs: [check, release]
+    if: ${{ !contains(needs.check.outputs.version, '-') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

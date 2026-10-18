@@ -22,12 +22,29 @@ pub fn valid_version(v: &str) -> bool {
         && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
 }
 
-/// Numeric-aware comparison (0.10.0 > 0.9.0).
+/// Numeric-aware comparison (0.10.0 > 0.9.0), with a pre-release below its release (0.6.0-rc.1 < 0.6.0 <
+/// 0.6.1-rc.1) as in semver. Build metadata (`+…`) is ignored.
 pub fn cmp_versions(a: &str, b: &str) -> Ordering {
     let parts = |s: &str| -> Vec<(u64, String)> {
-        s.split(['.', '-', '+']).map(|p| (p.parse::<u64>().unwrap_or(0), p.to_string())).collect()
+        s.split('.').map(|p| (p.parse::<u64>().unwrap_or(0), p.to_string())).collect()
     };
-    parts(a).cmp(&parts(b))
+    fn split(s: &str) -> (&str, Option<&str>) {
+        let s = s.split_once('+').map_or(s, |(v, _)| v);
+        s.split_once('-').map_or((s, None), |(v, pre)| (v, Some(pre)))
+    }
+    let ((a, a_pre), (b, b_pre)) = (split(a), split(b));
+    parts(a).cmp(&parts(b)).then_with(|| match (a_pre, b_pre) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        // Numeric identifiers rank below alphanumeric ones.
+        (Some(x), Some(y)) => {
+            let ids = |s: &str| -> Vec<(bool, u64, String)> {
+                s.split('.').map(|p| (p.parse::<u64>().is_err(), p.parse().unwrap_or(0), p.to_string())).collect()
+            };
+            ids(x).cmp(&ids(y))
+        }
+    })
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]

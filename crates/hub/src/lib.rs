@@ -4,16 +4,20 @@
 
 pub mod admin;
 pub mod auth;
+pub mod bonjour;
 pub mod compute;
 pub mod config;
 pub mod db;
 pub mod events;
+pub mod fleet;
 pub mod http;
 pub mod json;
 pub mod limits;
 pub mod release;
+pub mod replica;
 pub mod server;
 pub mod stream;
+pub mod sync;
 pub mod validate;
 
 use config::{Config, Paths};
@@ -156,7 +160,8 @@ pub fn start(
     let mut hub = server::Hub::open(cfg, paths, opts)?;
     // A fresh hub has nobody enrolled yet: every report is refused until `hub pair` (or a legacy token), so starting
     // is safe and lets the service come up before the first machine joins.
-    if let Err(msg) = hub.check_auth_configured() {
+    // A replica gets its machines' tokens from the others, so an empty one is normal for a few seconds.
+    if let (None, Err(msg)) = (&hub.node, hub.check_auth_configured()) {
         eprintln!("hub: {msg}; until then every report is refused");
     }
     let (listener, addr) = http::bind(&hub.cfg.listen).map_err(|e| format!("listen on {}: {e}", hub.cfg.listen))?;
@@ -194,6 +199,24 @@ pub fn start(
             }
         })
         .map_err(|e| e.to_string())?;
+    // A replica pulls the others every few seconds, and notices fleet.toml edits.
+    if hub.node.is_some() {
+        let h = hub.clone();
+        std::thread::Builder::new()
+            .name("hub-sync".into())
+            .spawn(move || {
+                let mut n: u64 = 0;
+                loop {
+                    guarded("sync", || h.sync_round());
+                    if n % 8 == 7 {
+                        guarded("fleet settings", || h.check_local_settings());
+                    }
+                    n += 1;
+                    std::thread::sleep(fleet::PULL_EVERY);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
     Ok((hub, addr))
 }
 
@@ -215,10 +238,19 @@ fn serve(paths: Paths, a: &Args) -> Result<(), String> {
         clock: server::Clock::from_env(test_hooks),
         github,
         publish_on_change: tick_ms != 0,
+        exit_on_config_change: true,
     };
     let admin = paths.admin_token();
     let (hub, addr) = start(cfg, paths, opts)?;
     eprintln!("hub {} ({}) on http://{addr}", hub.cfg.name, hub.hub_id);
+    if let Some(f) = &hub.cfg.fleet {
+        eprintln!(
+            "hub: replica {} of the fleet (always_on = {}, seed peers: {})",
+            f.node,
+            f.always_on,
+            f.peers.join(", ")
+        );
+    }
     eprintln!("hub: admin token for the dashboard from other machines: {}", admin.display());
     if a.insecure {
         eprintln!("hub: WARNING --insecure-no-auth: anyone who can reach {addr} can report");
@@ -233,6 +265,22 @@ fn serve(paths: Paths, a: &Args) -> Result<(), String> {
         eprintln!("hub: publishing to {} ({})", t.name, t.url);
     }
     let _ = agent_stats_common::write_status(&hub.status());
+    // On the local network as _agent-stats._tcp, unless only this machine can reach it. Lives as long as `serve`.
+    let node = config::hostname();
+    let node = node.strip_suffix(".local").unwrap_or(&node).to_string();
+    let os = if cfg!(target_os = "macos") { "macos" } else { "linux" };
+    let _bonjour = (!addr.ip().is_loopback())
+        .then(|| {
+            let txt = [
+                ("hubId", hub.hub_id.as_str()),
+                ("name", hub.cfg.name.as_str()),
+                ("node", node.as_str()),
+                ("v", agent_stats_common::VERSION),
+                ("os", os),
+            ];
+            bonjour::advertise(&node, addr.port(), &txt)
+        })
+        .flatten();
     // GitHub contributions: now, then hourly.
     if hub.cfg.github_user.is_some() {
         let h = hub.clone();
@@ -379,7 +427,7 @@ fn machines(paths: Paths, a: &Args) -> Result<(), String> {
 fn revoke(paths: Paths, a: &Args) -> Result<(), String> {
     let [machine] = a.rest.as_slice() else { return Err("usage: agent-stats hub revoke <machine>".into()) };
     let db = open_db(&paths)?;
-    if auth::revoke(&db, machine, now_ms()).map_err(|e| e.to_string())? {
+    if fleet::revoke(&db, machine, now_ms()).map_err(|e| e.to_string())? {
         println!("Revoked {machine}'s token. Its reports are refused from now on; history is kept.");
         Ok(())
     } else {
@@ -409,6 +457,8 @@ fn purge(paths: Paths, a: &Args) -> Result<(), String> {
     }
     let mut db = open_db(&paths)?;
     let p = admin::purge(&mut db, machine, from.as_deref(), to.as_deref()).map_err(|e| e.to_string())?;
+    // Every replica of a fleet deletes the same rows.
+    fleet::record_purge(&db, machine, from.as_deref(), to.as_deref(), now_ms()).map_err(|e| e.to_string())?;
     println!(
         "Deleted {} usage rows and {} repository rows of {} ({} to {}).",
         p.usage,

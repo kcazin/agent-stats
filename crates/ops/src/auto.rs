@@ -538,6 +538,12 @@ mod tests {
         assert!(!newer("0.9.9", "0.10.0"));
         assert!(!newer("0.4.1", "0.4.1"));
         assert!(newer("0.4.10", "0.4.9"));
+        assert!(newer("0.6.0", "0.6.0-rc.1"));
+        assert!(newer("0.6.0-rc.1", "0.5.0"));
+        assert!(newer("0.6.0-rc.10", "0.6.0-rc.9"));
+        assert!(newer("0.6.1-rc.1", "0.6.0"));
+        assert!(!newer("0.6.0-rc.1", "0.6.0"));
+        assert!(!newer("0.6.0+build.2", "0.6.0"));
     }
 
     #[test]

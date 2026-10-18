@@ -116,6 +116,7 @@ match = ["*neon*"]
         clock: server::Clock::real(),
         github: None,
         publish_on_change: false,
+        exit_on_config_change: false,
     };
     let opts_at = |t: f64| {
         let c = server::Clock::real();

@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "One binary for every agent-stats role: report, hub, relay, plus install and updates"
@@ -16,4 +16,5 @@ agent-stats-reporter = { path = "../reporter" }
 agent-stats-hub = { path = "../hub" }
 agent-stats-relay = { path = "../relay" }
 agent-stats-ops = { path = "../ops" }
+agent-stats-fleet = { path = "../fleet" }
 libc = "0.2"

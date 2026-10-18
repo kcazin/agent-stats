@@ -46,7 +46,7 @@ pub fn normalize_code(code: &str) -> String {
 ///
 /// `view_tokens`: each enrolled machine's read-only token (sha256), for a widget on that machine. It reads what the
 /// dashboard reads and nothing else, and lives as long as the machine's own token.
-fn ensure_schema(db: &Connection) -> rusqlite::Result<()> {
+pub(crate) fn ensure_schema(db: &Connection) -> rusqlite::Result<()> {
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS pair_code_machine (code_hash TEXT PRIMARY KEY, machine TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS view_tokens (machine TEXT PRIMARY KEY, token_hash TEXT NOT NULL, created INTEGER NOT NULL);

@@ -34,10 +34,35 @@ tarball), it is installed as a version and `current` moves to it, printing `curr
 `current` to a lower version unless you pass `--force`. On Linux it also runs `loginctl enable-linger` so the reporter survives logout (it warns if that fails).
 
 From a checkout, `./install.sh "label"` does the same, and builds with cargo when there is no release (or with
-`--from-source`). Options: `--hub` also installs the hub service, `--no-service` installs the binary only.
+`--from-source`). Options: `--hub` also installs the hub service, `--no-service` installs the binary only,
+`--version V` installs that release instead of the latest, `--archive FILE` installs a release archive already on
+the machine (checked against the `SHA256SUMS` beside it), and `--join URL --code CODE` joins a hub or fleet once
+the reporter runs. When no release can be downloaded the script exits with status 3.
 
 Supported targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`,
 `x86_64-apple-darwin`.
+
+## Adding a machine from one that runs the hub
+
+On a machine with the hub (a Mac with Tokiscope, or `agent-stats service install hub`):
+
+```sh
+agent-stats fleet discover                    # Tailscale peers and Bonjour adverts, and which run agent-stats
+agent-stats fleet add --ssh me@cachy          # installs agent-stats there and joins it: nothing to type there
+agent-stats fleet invite                      # or: a one-time line to paste on the new machine
+agent-stats fleet list                        # the machines of this fleet
+agent-stats fleet remove cachy --ssh me@cachy # revoke, and stop its reporter
+```
+
+`add --ssh` uses the system `ssh` (your `~/.ssh/config`, agent and Tailscale SSH work) in batch mode, so it never
+waits on a password: a machine that wants one is reported with the `ssh-copy-id` line to run. A first connection
+accepts the host key; a changed key stops it. It probes the machine, finds an address of this machine that answers
+from there (with this hub's id), installs this machine's version of agent-stats with install.sh (uploading the
+release over SSH if the machine can't download it), joins it with a pairing code made here and passed only over
+SSH, and waits for its first report. `--replace` re-adds a machine whose name is already enrolled (reinstalled).
+Every command takes `--json` (docs/FLEET.md has the shapes).
+
+`invite` prints `curl … install.sh | sh -s -- --join <url> --code <code>`, valid 10 minutes, one use.
 
 ## Adding a hub
 

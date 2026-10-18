@@ -98,6 +98,13 @@ impl Outbox {
         self.cv.notify_all();
     }
 
+    /// Marks payload `seq` as done without sending it (another replica publishes).
+    fn skip(&self, seq: u64) {
+        let mut st = lock(&self.state);
+        st.done = st.done.max(seq);
+        self.cv.notify_all();
+    }
+
     /// Waits until payload `seq` (or a newer one) has been sent, at most until `until`.
     fn wait_done(&self, seq: u64, until: Instant) {
         let mut st = lock(&self.state);
@@ -158,8 +165,8 @@ pub struct Hub {
     pub clock: Clock,
     pub listen: String,
     pub started: u64,
-    db: Mutex<Connection>,
-    pile: Mutex<Option<Pile>>,
+    pub(crate) db: Mutex<Connection>,
+    pub(crate) pile: Mutex<Option<Pile>>,
     recent: Mutex<Recent>,
     publish: Arc<Mutex<Vec<PublishStatus>>>,
     /// One per publish target, same order.
@@ -177,11 +184,24 @@ pub struct Hub {
     private_feed: Mutex<Option<String>>,
     /// The `Arc` this hub lives in (`into_arc`), for the streams that outlive a request.
     me: Weak<Hub>,
-    limiter: crate::auth::PairLimiter,
+    pub(crate) limiter: crate::auth::PairLimiter,
     /// The `new_repo_webhook` worker, if one is configured.
     new_repos: Option<crate::events::Notifier>,
     github: Option<GithubFetch>,
     tick_lock: Mutex<()>,
+    /// This replica's name, when the hub is a replica of a fleet (`[fleet]` in hub.toml).
+    pub node: Option<String>,
+    /// What this replica shows the others (`secrets/replica.token`); empty outside a fleet.
+    pub(crate) replica_token: String,
+    /// The other replicas as this one sees them.
+    pub(crate) peers: Mutex<std::collections::HashMap<String, crate::fleet::PeerState>>,
+    pub(crate) sync_http: ureq::Agent,
+    /// Restart (exit, for the service manager to start it again) when the fleet's settings change.
+    pub(crate) exit_on_config_change: bool,
+    /// The hash of the fleet settings this process loaded.
+    pub(crate) settings_at_start: Option<String>,
+    /// The `requests` body `/api/stream` clients have.
+    requests_feed: Mutex<Option<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -195,6 +215,8 @@ pub struct Options {
     pub github: Option<GithubFetch>,
     /// Publish within a second of an accepted report (off for `AGENT_STATS_TICK_MS=0`: only ticks publish).
     pub publish_on_change: bool,
+    /// In a fleet: exit when newer fleet settings arrive, so the service manager restarts the hub with them.
+    pub exit_on_config_change: bool,
 }
 
 impl Hub {
@@ -234,6 +256,24 @@ impl Hub {
         let per_ip = if cfg.max_connections_per_ip == 0 { 0 } else { StreamLimits::default().per_ip };
         let streams = Broadcaster::start(StreamLimits { per_ip, ..StreamLimits::default() })
             .map_err(|e| format!("stream thread: {e}"))?;
+        let node = cfg.fleet.as_ref().map(|f| f.node.clone());
+        let mut replica_token = String::new();
+        let mut settings_at_start = None;
+        if node.is_some() {
+            replica_token = crate::auth::read_or_create(&paths.replica_token(), 32, true)
+                .map_err(|e| format!("{}: {e}", paths.replica_token().display()))?;
+            let now = opts.clock.now();
+            crate::fleet::ensure_self(&db, &cfg, &crate::auth::sha256_hex(&replica_token), now)
+                .map_err(|e| format!("fleet member row: {e}"))?;
+            settings_at_start = crate::fleet::share_local_settings(&db, &paths, node.as_deref().unwrap_or(""), now)
+                .map_err(|e| format!("fleet settings: {e}"))?;
+        }
+        let sync_http: ureq::Agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .timeout_connect(Some(Duration::from_secs(3)))
+            .build()
+            .into();
         Ok(Hub {
             listen: cfg.listen.clone(),
             cfg,
@@ -261,6 +301,13 @@ impl Hub {
             new_repos,
             github: opts.github,
             tick_lock: Mutex::new(()),
+            node,
+            replica_token,
+            peers: Mutex::new(Default::default()),
+            sync_http,
+            exit_on_config_change: opts.exit_on_config_change,
+            settings_at_start,
+            requests_feed: Mutex::new(None),
         })
     }
 
@@ -443,6 +490,12 @@ impl Hub {
         }
         match self.ingest(&r, auth) {
             Ok(()) => {
+                if req.header("x-forwarded-for").is_none() {
+                    let now = self.clock.now();
+                    if let Err(e) = crate::fleet::note_addr(&lock(&self.db), &r.machine, req.peer, now) {
+                        eprintln!("hub: address of {}: {e}", r.machine);
+                    }
+                }
                 self.note_change();
                 Response::json(200, r#"{"ok":true}"#)
             }
@@ -567,8 +620,13 @@ impl Hub {
             let db = lock(&self.db);
             let l = compute::live(&db, now)?;
             {
+                // In a fleet the publisher keeps the pile; the others take its copy as it syncs.
                 let mut pile = lock(&self.pile);
-                compute::update_pile(&db, &self.cfg, &mut pile, now)?;
+                if self.publishes(&db, now) {
+                    compute::update_pile(&db, &self.cfg, &mut pile, now)?;
+                } else {
+                    *pile = Pile::load(&db);
+                }
             }
             db.execute(
                 "INSERT OR REPLACE INTO samples (at, working, open, subagents, machines, by_agent) VALUES (?, ?, ?, ?, ?, ?)",
@@ -581,7 +639,7 @@ impl Hub {
                     J::Obj(l.by_agent.clone()).stringify()
                 ],
             )?;
-            db.execute("DELETE FROM samples WHERE at < ?", params![(now - 30.0 * 86_400_000.0) as i64])?;
+            crate::sync::prune_samples(&db, (now - 30.0 * 86_400_000.0) as i64)?;
             drop(db);
             self.compose(now, true)
         })();
@@ -618,8 +676,15 @@ impl Hub {
         *lock(&self.latest) = Some((now, body.clone()));
         *seq += 1;
         let body = Arc::new(body.into_bytes());
-        for o in &self.outboxes {
-            o.put(Job { seq: *seq, at: now, body: body.clone() });
+        // In a fleet only one replica publishes; the others still serve their own `/stats` when public.
+        if self.publishes(&lock(&self.db), now) {
+            for o in &self.outboxes {
+                o.put(Job { seq: *seq, at: now, body: body.clone() });
+            }
+        } else {
+            for o in &self.outboxes {
+                o.skip(*seq);
+            }
         }
         self.feed_public();
         Ok(Some(*seq))
@@ -627,8 +692,8 @@ impl Hub {
 
     // ---- changes and streams ----
 
-    /// An accepted report: wake the change thread.
-    fn note_change(&self) {
+    /// An accepted report (or rows from another replica): wake the change thread.
+    pub(crate) fn note_change(&self) {
         let (m, cv) = &self.changes;
         lock(m).since.get_or_insert_with(Instant::now);
         cv.notify_all();
@@ -725,12 +790,29 @@ impl Hub {
         Ok((crate::stream::event("live", &J::Obj(live).stringify()), repos))
     }
 
-    /// Sends `/api/stream` clients `live`, and `repos` if it changed. After reports and every LIVE_EVERY.
+    /// The pending join requests, as the `requests` event's body.
+    fn requests_body(&self) -> String {
+        let now = self.clock.now();
+        let list = crate::fleet::pending(&lock(&self.db), now).unwrap_or_default();
+        J::Arr(list.into_iter().map(J::Obj).collect()).stringify()
+    }
+
+    /// Sends `/api/stream` clients `live`, `repos` if it changed, and `requests` (pending join requests) if they
+    /// changed. After reports and every LIVE_EVERY.
     pub fn feed_private(&self) {
         let mut feed = lock(&self.private_feed);
         if self.streams.count(Feed::Private) == 0 {
             *feed = None;
+            *lock(&self.requests_feed) = None;
             return;
+        }
+        let requests = self.requests_body();
+        {
+            let mut rf = lock(&self.requests_feed);
+            if rf.as_deref() != Some(requests.as_str()) {
+                self.streams.send(Feed::Private, &crate::stream::event("requests", &requests));
+                *rf = Some(requests);
+            }
         }
         match self.private_events() {
             Ok((live, repos)) => {
@@ -781,6 +863,15 @@ impl Hub {
                 first.push(live);
                 first.push(crate::stream::event("repos", &repos));
                 *f = Some(repos);
+                let requests = self.requests_body();
+                {
+                    let mut rf = lock(&self.requests_feed);
+                    if rf.as_ref().is_some_and(|r| *r != requests) {
+                        self.streams.send(Feed::Private, &crate::stream::event("requests", &requests));
+                    }
+                    *rf = Some(requests.clone());
+                }
+                first.push(crate::stream::event("requests", &requests));
                 self.streams.join(sock, feed, ticket, &first);
             }
         }
@@ -816,6 +907,10 @@ impl Hub {
 
     pub fn fetch_github(&self) {
         let (Some(user), Some(fetch)) = (self.cfg.github_user.as_deref(), self.github.as_ref()) else { return };
+        // One replica asks GitHub for the fleet; the counts sync.
+        if !self.publishes(&lock(&self.db), self.clock.now()) {
+            return;
+        }
         let res = fetch(user).and_then(|out| parse_github(&out));
         match res {
             Ok(days) => {
@@ -863,7 +958,9 @@ impl Hub {
                         .with("name", self.cfg.name.as_str())
                         .with("listen", self.listen.as_str())
                         .with("machinesOnline", online)
-                        .with("publish", targets),
+                        .with("publish", targets)
+                        .with("node", self.node.clone())
+                        .with("publisher", self.node.as_ref().map(|_| self.publisher(&lock(&self.db), now))),
                 )
                 .stringify(),
             )
@@ -973,21 +1070,13 @@ impl Hub {
             "/pair" => self.pair(&req),
             "/view-token" => self.view_token(&req),
             "/release" => self.release(&req),
+            "/sync/changes" => self.sync_changes(&req),
+            "/sync/hello" => self.sync_hello(&req),
+            "/join-request" => self.join_request(&req),
+            p if p.starts_with("/join-request/") => self.join_request_status(&req),
+            "/api/join-requests" if self.may_read(&req) => Response::json(200, self.requests_body()),
             p if p.starts_with("/release/") => self.release_file(&req),
-            agent_stats_common::WELL_KNOWN => Response::json(
-                200,
-                J::Obj(
-                    Obj::new()
-                        .with("role", "hub")
-                        .with("hubId", self.hub_id.as_str())
-                        .with("name", self.cfg.name.as_str())
-                        .with("version", agent_stats_common::VERSION)
-                        .with("protocol", agent_stats_common::PROTOCOL as i64)
-                        .with("routes", J::Arr(self.cfg.routes().into_iter().map(J::Str).collect()))
-                        .with("timezone", self.cfg.tz_name.as_str()),
-                )
-                .stringify(),
-            ),
+            agent_stats_common::WELL_KNOWN => Response::json(200, J::Obj(self.descriptor()).stringify()),
             "/stats" if self.cfg.public => {
                 if req.method == "OPTIONS" {
                     return self.cors(
@@ -1044,7 +1133,9 @@ impl Hub {
                     )
                 }
             }
-            "/api/state" | "/api/repos" | "/api/public" | "/api/stream" => Response::error(401, "unauthorized"),
+            "/api/state" | "/api/repos" | "/api/public" | "/api/stream" | "/api/join-requests" => {
+                Response::error(401, "unauthorized")
+            }
             p if self.test_hooks && p.starts_with("/__test/") && req.peer.is_loopback() => self.test_hook(&req),
             _ => Response::error(404, "not found"),
         }

@@ -22,7 +22,10 @@ Where the hub lives is the one real choice, and both are the same binary:
 | **Home** | an always-on machine (the Mac mini) | Tailscale / LAN (`http://mac-mini:7777`) | relay (the hub has no public address) |
 | **Cloud** | a container (Railway, Fly, a VPS) with a volume | HTTPS | the hub serves `/stats` itself, no relay |
 
-Private data (paths, cwd, repo names, git remotes, session ids) never leaves the hub. The relay and `/stats` only
+Or no main machine at all: a **fleet**, where every Mac is a replica of the hub and they sync with each other
+(Linux boxes stay reporters). See [FLEET.md](FLEET.md) for the model, the sync and the add-machine commands.
+
+Private data (paths, cwd, repo names, git remotes, session ids) never leaves the hub (in a fleet: the replicas). The relay and `/stats` only
 get the public payload: project buckets, opaque session ids, totals.
 
 ## Design decisions (and where they come from)
@@ -70,6 +73,13 @@ Borrowed from how T3 Code runs its server and connects environments (`~/.t3/sour
     Unassigned repos count as `other` in the public payload, so a new private repo never shows up by name.
 12. **Projects are hub config.** `hub.toml` maps repos to public projects (`key`, `name`, `color`, glob patterns on
     repo name or remote). The public payload carries the project list, so a website doesn't hard-code it.
+13. **Adding a machine is one command on a machine with the hub** (`crates/fleet`, `agent-stats fleet`).
+    `discover` merges `tailscale status --json` with Bonjour (`_agent-stats._tcp`; the hub advertises itself with
+    `dns-sd -R` or `avahi-publish-service` when it listens beyond loopback, TXT `hubId`, `name`, `node`, `v`, `os`;
+    `AGENT_STATS_NO_BONJOUR=1` turns that off) and asks each online candidate for its well-known descriptor; it only
+    suggests. `add --ssh` does the install and join over the system `ssh` (batch mode, `accept-new` host keys, one
+    POSIX script on stdin per round trip: probe, install.sh at this version, join), with the pairing code minted in
+    hub.db here and carried only inside the script. `invite` prints the paste-able line. See docs/FLEET.md.
 
 ## Files
 
@@ -273,7 +283,8 @@ the file doesn't set them.
   `trusted_networks` peers, and 4 per IP for anyone else (none when `max_connections_per_ip = 0`, a hub behind a
   proxy); over it, 503. A `: ping` goes to every stream every 15 s; a client more than 256 KiB behind, or one nothing
   could be written to for 5 s, is dropped (its EventSource reconnects).
-- **Routes.** `POST /report`, `POST /pair`, `GET /.well-known/agent-stats`, `GET /` (dashboard), `GET /api/state`,
+- **Routes.** `GET /sync/changes`, `POST /sync/hello`, `POST /join-request`, `GET /join-request/<id>` and
+  `GET /api/join-requests` for fleets (docs/FLEET.md). `POST /report`, `POST /pair`, `GET /.well-known/agent-stats`, `GET /` (dashboard), `GET /api/state`,
   `GET /api/repos`, `GET /api/stream` (same auth as `/api/state`), `GET /api/public`, and `GET /stats` and `GET /stream`
   when `public = true`. The dashboard follows `/api/stream` and polls `/api/state` every 15 s for the rest (every 5 s,
   with `/api/repos`, on a hub without the stream). Test-only `/__test/{clock,tick,github}` exist when
@@ -325,7 +336,9 @@ the file doesn't set them.
   head (no request slot), at most 1000 (503 over it); a stream with more than 256 KiB unsent when a new event comes,
   or no write progress for 5 s, is dropped and reconnects to a fresh `stats`. Clients fall back to polling `/stats`
   when `/stream` 404s.
-- `GET /.well-known/agent-stats` (hub, relay): descriptor, no auth. The hub's adds `routes` (its advertised URLs).
+- `GET /.well-known/agent-stats` (hub, relay): descriptor, no auth. The hub's adds `routes` (its advertised URLs);
+  a fleet replica's also `node` (its name) and `fleetRoutes` (every replica's routes, always-on first), which
+  reporters append to their hub entry.
 
 The public payload keeps the exact shape the kilcazn.com site reads today (`updated, live, today, history, activity,
 since, pile, projects, calendar`), and adds `projectList: [{key, name, color}]`.

@@ -35,6 +35,14 @@ impl Paths {
     pub fn hub_id(&self) -> PathBuf {
         self.state_dir.join("hub-id")
     }
+    /// The fleet-wide settings a replica syncs (docs/FLEET.md).
+    pub fn fleet_toml(&self) -> PathBuf {
+        self.config_dir.join("fleet.toml")
+    }
+    /// The token this replica shows the others of its fleet.
+    pub fn replica_token(&self) -> PathBuf {
+        self.config_dir.join("secrets").join("replica.token")
+    }
     /// A path from hub.toml: absolute, or relative to the config directory.
     pub fn resolve(&self, p: &str) -> PathBuf {
         let p = Path::new(p);
@@ -72,6 +80,17 @@ struct Raw {
     unattributed: Option<toml::Table>,
     #[serde(default)]
     pile: RawPile,
+    fleet: Option<RawFleet>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawFleet {
+    node: Option<String>,
+    always_on: Option<bool>,
+    #[serde(default)]
+    peers: Vec<String>,
+    token_file: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +136,34 @@ pub struct PublishTarget {
     pub timeout: Duration,
 }
 
+/// `[fleet]`: this hub is a replica of a fleet (docs/FLEET.md).
+#[derive(Clone, Debug)]
+pub struct FleetConfig {
+    /// This replica's name: its machine name.
+    pub node: String,
+    /// Preferred for publishing (desktops and servers; laptops say false).
+    pub always_on: bool,
+    /// Routes of other replicas to start syncing from; the members table adds the rest.
+    pub peers: Vec<String>,
+    /// This machine's reporter token for the fleet, used to introduce this replica to the others the first time.
+    pub token_file: Option<PathBuf>,
+}
+
+/// hub.toml keys that belong to the fleet rather than to one replica: in fleet mode they come from `fleet.toml`,
+/// which replicas sync.
+pub const FLEET_KEYS: &[&str] = &[
+    "name",
+    "timezone",
+    "public",
+    "cors_origins",
+    "github_user",
+    "new_repo_webhook",
+    "publish",
+    "project",
+    "unattributed",
+    "pile",
+];
+
 /// The pile of unprocessed tokens on the site (hub.mjs's PILE_RATE and first-run seed, as config).
 #[derive(Clone, Debug)]
 pub struct PileConfig {
@@ -155,6 +202,8 @@ pub struct Config {
     pub pile: PileConfig,
     /// Was there a hub.toml at all? (Without one, the JS hub's secret files are used as they were.)
     pub from_file: bool,
+    /// Set when this hub is a replica of a fleet.
+    pub fleet: Option<FleetConfig>,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -162,14 +211,36 @@ fn env(name: &str) -> Option<String> {
 }
 
 impl Config {
-    /// Loads `path` (missing file = defaults + environment).
+    /// Loads `path` (missing file = defaults + environment). With `[fleet]`, the fleet-wide keys come from
+    /// `fleet.toml` beside it when there is one (they win over the same keys in hub.toml).
     pub fn load(paths: &Paths, path: &Path) -> Result<Config, String> {
-        let (raw, from_file) = match std::fs::read_to_string(path) {
-            Ok(text) => (toml::from_str::<Raw>(&text).map_err(|e| format!("{}: {e}", path.display()))?, true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Raw::default(), false),
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Config::from_raw(paths, Raw::default(), false)
+            }
             Err(e) => return Err(format!("{}: {e}", path.display())),
         };
-        Config::from_raw(paths, raw, from_file)
+        let mut table: toml::Table = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        if table.contains_key("fleet") {
+            let fleet_file = paths.fleet_toml();
+            match std::fs::read_to_string(&fleet_file) {
+                Ok(f) => {
+                    let fleet: toml::Table =
+                        toml::from_str(&f).map_err(|e| format!("{}: {e}", fleet_file.display()))?;
+                    for (k, v) in fleet {
+                        if !FLEET_KEYS.contains(&k.as_str()) {
+                            return Err(format!("{}: {k} is not a fleet-wide key", fleet_file.display()));
+                        }
+                        table.insert(k, v);
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("{}: {e}", fleet_file.display())),
+            }
+        }
+        let raw: Raw = toml::Value::Table(table).try_into().map_err(|e| format!("{}: {e}", path.display()))?;
+        Config::from_raw(paths, raw, true)
     }
 
     /// Parses hub.toml text (for tests).
@@ -267,6 +338,15 @@ impl Config {
             }
             None => unattributed.push(("other".to_string(), 1.0)),
         }
+        let fleet = raw.fleet.map(|f| FleetConfig {
+            node: f.node.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
+                let h = hostname();
+                h.strip_suffix(".local").map(str::to_owned).unwrap_or(h)
+            }),
+            always_on: f.always_on.unwrap_or(true),
+            peers: f.peers,
+            token_file: f.token_file.map(|t| paths.resolve(&t)),
+        });
         let pile = PileConfig {
             per_hour: raw.pile.per_hour.unwrap_or(1e9),
             seed_drain: raw.pile.seed_drain.unwrap_or(1e5),
@@ -291,6 +371,7 @@ impl Config {
             unattributed,
             pile,
             from_file,
+            fleet,
         })
     }
 
