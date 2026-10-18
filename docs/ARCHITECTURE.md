@@ -22,7 +22,10 @@ Where the hub lives is the one real choice, and both are the same binary:
 | **Home** | an always-on machine (the Mac mini) | Tailscale / LAN (`http://mac-mini:7777`) | relay (the hub has no public address) |
 | **Cloud** | a container (Railway, Fly, a VPS) with a volume | HTTPS | the hub serves `/stats` itself, no relay |
 
-Private data (paths, cwd, repo names, git remotes, session ids) never leaves the hub. The relay and `/stats` only
+Or no main machine at all: a **fleet**, where every Mac is a replica of the hub and they sync with each other
+(Linux boxes stay reporters). See [FLEET.md](FLEET.md) for the model, the sync and the add-machine commands.
+
+Private data (paths, cwd, repo names, git remotes, session ids) never leaves the hub (in a fleet: the replicas). The relay and `/stats` only
 get the public payload: project buckets, opaque session ids, totals.
 
 ## Design decisions (and where they come from)
@@ -280,7 +283,8 @@ the file doesn't set them.
   `trusted_networks` peers, and 4 per IP for anyone else (none when `max_connections_per_ip = 0`, a hub behind a
   proxy); over it, 503. A `: ping` goes to every stream every 15 s; a client more than 256 KiB behind, or one nothing
   could be written to for 5 s, is dropped (its EventSource reconnects).
-- **Routes.** `POST /report`, `POST /pair`, `GET /.well-known/agent-stats`, `GET /` (dashboard), `GET /api/state`,
+- **Routes.** `GET /sync/changes`, `POST /sync/hello`, `POST /join-request`, `GET /join-request/<id>` and
+  `GET /api/join-requests` for fleets (docs/FLEET.md). `POST /report`, `POST /pair`, `GET /.well-known/agent-stats`, `GET /` (dashboard), `GET /api/state`,
   `GET /api/repos`, `GET /api/stream` (same auth as `/api/state`), `GET /api/public`, and `GET /stats` and `GET /stream`
   when `public = true`. The dashboard follows `/api/stream` and polls `/api/state` every 15 s for the rest (every 5 s,
   with `/api/repos`, on a hub without the stream). Test-only `/__test/{clock,tick,github}` exist when
@@ -332,7 +336,9 @@ the file doesn't set them.
   head (no request slot), at most 1000 (503 over it); a stream with more than 256 KiB unsent when a new event comes,
   or no write progress for 5 s, is dropped and reconnects to a fresh `stats`. Clients fall back to polling `/stats`
   when `/stream` 404s.
-- `GET /.well-known/agent-stats` (hub, relay): descriptor, no auth. The hub's adds `routes` (its advertised URLs).
+- `GET /.well-known/agent-stats` (hub, relay): descriptor, no auth. The hub's adds `routes` (its advertised URLs);
+  a fleet replica's also `node` (its name) and `fleetRoutes` (every replica's routes, always-on first), which
+  reporters append to their hub entry.
 
 The public payload keeps the exact shape the kilcazn.com site reads today (`updated, live, today, history, activity,
 since, pile, projects, calendar`), and adds `projectList: [{key, name, color}]`.

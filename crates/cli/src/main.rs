@@ -12,6 +12,10 @@ Reporter (every machine):
   status                              what's running here and when it last reached each hub
   doctor                              check config, transcripts, hubs and the service
 
+Fleet (every Mac a replica, docs/FLEET.md):
+  fleet status | create | replica | request <url> | requests | approve <id> | deny <id>   [--json]
+                                      start a fleet, make this machine a replica, ask to join, answer requests
+
 Hub (one machine, or the cloud):
   hub serve | pair [--label L] [--replace M] | machines | revoke <machine> | purge <machine> | repos | projects
 
@@ -69,7 +73,7 @@ fn main() -> ExitCode {
         "hub" => agent_stats_hub::main(rest),
         "relay" => agent_stats_relay::main(rest),
         "service" | "update" | "rollback" => agent_stats_ops::main(cmd, rest),
-        "machines" => agent_stats_fleet::main(cmd, rest),
+        "machines" | "fleet" => agent_stats_fleet::main(cmd, rest),
         "version" | "--version" | "-V" => {
             println!("agent-stats {} (protocol {})", agent_stats_common::VERSION, agent_stats_common::PROTOCOL);
             ExitCode::SUCCESS

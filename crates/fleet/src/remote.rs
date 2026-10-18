@@ -588,7 +588,7 @@ pub fn remove(a: &Args) -> Res<()> {
     let out = Out { json: a.json };
     let ctx = HubCtx::open()?;
     let db = ctx.db()?;
-    let revoked = agent_stats_hub::auth::revoke(&db, machine, now_ms()).map_err(|e| e.to_string())?;
+    let revoked = agent_stats_hub::fleet::revoke(&db, machine, now_ms()).map_err(|e| e.to_string())?;
     let detail = if revoked {
         format!("{machine}'s token is revoked; its history stays")
     } else {

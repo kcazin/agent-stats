@@ -19,11 +19,25 @@ relay only gets project totals and opaque session ids. Design and contracts: [do
 
 | Setup | When | Hub | Reporters reach it via |
 |---|---|---|---|
+| **Fleet** | 2–5 machines you use, no main one | every Mac is a replica ([docs/FLEET.md](docs/FLEET.md)) | whichever replica answers |
 | **Solo** | one machine | same machine | `http://127.0.0.1:7777` |
 | **Home** | an always-on machine and a private network (Tailscale, LAN) | e.g. a Mac mini | `http://mac-mini:7777` |
 | **Cloud** | no always-on machine, or reporters on different networks | a container with a volume ([docs/deploy.md](docs/deploy.md)) | `https://stats.example.com` |
 
-## Set up
+## Set up a fleet
+
+Every replica keeps every machine's history and shows the whole dashboard on its own, so nothing stops when one
+machine sleeps, restarts or goes offline. With Tokiscope this is the default; by hand:
+
+```sh
+agent-stats fleet create --name home            # on the first machine
+agent-stats machines add --ssh me@linux-box     # from any replica: installs, joins, waits for the first report
+agent-stats machines invite                     # or a line to paste on a machine you can't SSH to
+agent-stats fleet request http://mac-mini:7777  # on another Mac: then approve it on any replica (same 4 digits)
+agent-stats fleet status                        # replicas, who publishes, when each was last reached
+```
+
+## Set up a single hub
 
 **1. The hub** (once). On the hub machine:
 

@@ -64,6 +64,7 @@ fn add_over_ssh_installs_joins_and_waits_for_the_first_report() {
         clock: agent_stats_hub::server::Clock::real(),
         github: None,
         publish_on_change: false,
+        exit_on_config_change: false,
     };
     let (_hub, addr) = agent_stats_hub::start(cfg, paths.clone(), opts).unwrap();
 

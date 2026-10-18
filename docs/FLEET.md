@@ -97,7 +97,8 @@ Three ways, all ending with a machine token in `machine_tokens` (synced to every
    requester polls `GET /join-request/<id>?key=<sha256 of token>` until approved. Requests expire after 10 min.
 
 Discovery (`agent-stats machines discover`: `tailscale status --json`, Bonjour `_agent-stats._tcp`) only suggests
-machines; it never enrolls one.
+machines; it never enrolls one. A Mac that runs Tokiscope joins from its own first launch (way 3), so `add --ssh`
+refuses one ("open it there and choose Join").
 
 ## CLI contracts (JSON, for Tokiscope)
 
@@ -132,19 +133,25 @@ Steps in order: `connect`, `route`, `install`, `join`, `report`, `done`. A failu
 `agent-stats machines list --json` → `[{"machine","label","role":"replica"|"leaf","online","lastReport","version",
 "platform","revoked","routes"}]`.
 
-`agent-stats machines remove <machine> [--ssh <target>] [--json]` → revokes it; with `--ssh` also uninstalls there.
+`agent-stats machines remove <machine> [--ssh <target>] [--json]` → revokes it (its token, and its member row if
+it is a replica; both sync); with `--ssh` also uninstalls there. Lines: `revoke`, `uninstall` (with `--ssh`), then
+`{"step":"done","state":"ok","machine"}`.
 
 `agent-stats fleet status --json` → `{"fleetId","name","node","replica":bool,"publisher":node,"members":[{"node",
-"routes","alwaysOn","version","lastSync","reachable"}]}`.
+"routes","alwaysOn","version","revoked","self","lastSync","lastError","reachable"}]}`. Run on a machine with a hub.
 
-`agent-stats fleet replica [--json]` → makes this machine a replica (see above); `{"fleetId","node","listen",
-"startHub":true}`. In managed mode it only writes configuration; the app starts the hub.
+`agent-stats fleet replica [--port P] [--json]` → makes this machine a replica (see above); `{"fleetId","node",
+"listen","startHub","alwaysOn"}` (`restartHub` too when it turned an existing hub into a replica, `already` when it
+was one). `startHub`/`restartHub` are true in managed mode, where it only writes configuration and the app (re)starts
+the hub; otherwise it installs or restarts the hub service itself.
 
-`agent-stats fleet create [--name N] [--json]` → a new fleet with this machine as its first replica (hub.toml,
-the reporter joined to it over loopback).
+`agent-stats fleet create [--name N] [--port P] [--json]` → a new fleet with this machine as its first replica
+(hub.toml, fleet.toml, and the reporter enrolled straight in the local database and joined over loopback; no running
+hub needed). Same answer as `replica`. On a machine that already has a hub, it does what `replica` does.
 
-`agent-stats fleet request <url> [--label L] [--json]` → lines `{"state":"pending","id","digits","expires"}`, then
-`{"state":"approved","fleetId","name"}` (joined and made a replica) or `{"state":"denied"}` / `{"state":"expired"}`.
+`agent-stats fleet request <url> [--label L] [--leaf] [--json]` → lines `{"state":"pending","id","digits","expires",
+"fleetId","name"}`, then `{"state":"approved","fleetId","name","replica","startHub"}` (joined, and made a replica
+unless `--leaf`) or `{"state":"denied"}` / `{"state":"expired"}` (exit 1).
 
 `agent-stats fleet requests --json` → `[{"id","machine","label","platform","digits","at"}]` (pending).
 `agent-stats fleet approve <id>` / `agent-stats fleet deny <id>`.

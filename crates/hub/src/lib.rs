@@ -160,7 +160,8 @@ pub fn start(
     let mut hub = server::Hub::open(cfg, paths, opts)?;
     // A fresh hub has nobody enrolled yet: every report is refused until `hub pair` (or a legacy token), so starting
     // is safe and lets the service come up before the first machine joins.
-    if let Err(msg) = hub.check_auth_configured() {
+    // A replica gets its machines' tokens from the others, so an empty one is normal for a few seconds.
+    if let (None, Err(msg)) = (&hub.node, hub.check_auth_configured()) {
         eprintln!("hub: {msg}; until then every report is refused");
     }
     let (listener, addr) = http::bind(&hub.cfg.listen).map_err(|e| format!("listen on {}: {e}", hub.cfg.listen))?;

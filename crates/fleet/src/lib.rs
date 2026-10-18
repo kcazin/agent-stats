@@ -1,4 +1,4 @@
-//! `agent-stats machines`: the machines of this fleet, and adding more. `discover` finds candidates (Tailscale peers,
+//! `agent-stats machines` and `agent-stats fleet` (see [`replica`]): the machines of this fleet, and adding more. `discover` finds candidates (Tailscale peers,
 //! Bonjour `_agent-stats._tcp`), `add --ssh` installs and joins a machine over SSH, `invite` prints a line to paste
 //! on one, `list` and `remove` manage the enrolled ones. Tokiscope draws these from their `--json` output; the
 //! contracts are in docs/FLEET.md ("CLI contracts").
@@ -7,6 +7,7 @@ pub mod discover;
 pub mod local;
 mod out;
 pub mod remote;
+pub mod replica;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -63,6 +64,9 @@ pub fn parse_args(args: &[String]) -> Res<Args> {
 
 /// `agent-stats machines <subcommand> [args]`. (`cmd` is the top-level command, `machines`.)
 pub fn main(cmd: &str, args: &[String]) -> ExitCode {
+    if cmd == "fleet" {
+        return replica::main(args);
+    }
     if cmd != "machines" {
         eprintln!("unknown command {cmd}");
         return ExitCode::from(2);

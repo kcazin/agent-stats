@@ -1,6 +1,6 @@
 [package]
 name = "agent-stats-fleet"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "agent-stats machines: find machines, add them over SSH or with a line to paste, list and remove them"
@@ -16,3 +16,4 @@ libc = "0.2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 sha2 = "0.10"
 ureq = "3"
+toml = "0.9"
