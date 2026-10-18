@@ -81,3 +81,8 @@ node tests/hub-parity/parity.mjs --rust target/release/agent-stats              
 
 `legacy/` holds the original JS reporter, hub, relay and installer: the reference the Rust versions are checked
 against, and the rollback path until every machine runs the Rust version.
+
+## License
+
+GPL-3.0-or-later: see [LICENSE](LICENSE). You may use, change and share agent-stats; whatever you distribute that
+builds on it must be under the GPL too, with its source.
