@@ -3,7 +3,7 @@
 
 use crate::git::GitIds;
 use crate::js::{act_time, date_value, tool_kind_of, DayCache, Entries, JsVal, Lax};
-use crate::state::{Contrib, FileState, Usage4};
+use crate::state::{Contrib, FileState, Io, RepoTotals, Usage4};
 use jiff::tz::TimeZone;
 use serde::de::{Deserializer, IgnoredAny, SeqAccess, Visitor};
 use serde::Deserialize;
@@ -52,29 +52,22 @@ impl<'s> Sink<'s> {
         self
     }
 
-    /// `count(day(ts), agent, model, tokens, output, cwd)`. `day_ms` is `None` for an invalid date, where the JS
-    /// reporter throws and stops reading the file; here the line just isn't counted.
-    pub fn count(
-        &mut self,
-        day_ms: Option<f64>,
-        agent: &str,
-        model: &str,
-        tokens: i64,
-        output: i64,
-        cwd: Option<&str>,
-    ) {
+    /// `count(day(ts), agent, model, tokens, output, cwd)`, with the tokens' split by kind (`io`, its `out` the
+    /// output) as far as the agent said. `day_ms` is `None` for an invalid date, where the JS reporter throws and
+    /// stops reading the file; here the line just isn't counted.
+    pub fn count(&mut self, day_ms: Option<f64>, agent: &str, model: &str, tokens: i64, io: Io, cwd: Option<&str>) {
         let Some(ms) = day_ms else { return };
         let Some(day) = self.days.day(ms) else { return };
         self.key.clear();
         self.key.push_str(day);
-        self.count_keyed(agent, model, tokens, output, cwd);
+        self.count_keyed(agent, model, tokens, io, cwd);
     }
 
     /// `count` for a day that is already a key such as "2026-10-12".
-    pub fn count_day(&mut self, day: &str, agent: &str, model: &str, tokens: i64, output: i64, cwd: Option<&str>) {
+    pub fn count_day(&mut self, day: &str, agent: &str, model: &str, tokens: i64, io: Io, cwd: Option<&str>) {
         self.key.clear();
         self.key.push_str(day);
-        self.count_keyed(agent, model, tokens, output, cwd);
+        self.count_keyed(agent, model, tokens, io, cwd);
     }
 
     /// The day key of a timestamp in ms, `None` when invalid.
@@ -83,10 +76,11 @@ impl<'s> Sink<'s> {
     }
 
     /// `self.key` holds the day.
-    fn count_keyed(&mut self, agent: &str, model: &str, tokens: i64, output: i64, cwd: Option<&str>) {
+    fn count_keyed(&mut self, agent: &str, model: &str, tokens: i64, io: Io, cwd: Option<&str>) {
         if tokens == 0 {
             return;
         }
+        let output = io.out;
         let model = if model.is_empty() { "unknown" } else { model };
         let day_len = self.key.len();
         self.key.push('|');
@@ -105,9 +99,10 @@ impl<'s> Sink<'s> {
         self.key.truncate(day_len);
         self.key.push('|');
         self.key.push_str(repo);
-        self.contrib.add_repo(&self.key, tokens);
+        let v = RepoTotals { tokens, io };
+        self.contrib.add_repo(&self.key, v);
         if let Some(d) = self.delta.as_deref_mut() {
-            d.add_repo(&self.key, tokens);
+            d.add_repo(&self.key, v);
         }
     }
 
@@ -336,18 +331,23 @@ impl<'a> CLine<'a> {
     }
 }
 
+/// A Claude usage (input, cache write, cache read, output) as a split.
+fn claude_io(u: Usage4) -> Io {
+    Io { inp: u[0], cr: u[2], cw: u[1], out: u[3] }
+}
+
 fn add_claude(f: &mut FileState, sink: &mut Sink, day: Option<f64>, model: &str, u: Usage4, cwd: Option<&str>) {
     let tokens: i64 = u.iter().sum();
     f.tokens += tokens;
     f.add_io(u[0], u[2], u[1], u[3]);
-    sink.count(day, "claude", model, tokens, u[3], cwd);
+    sink.count(day, "claude", model, tokens, claude_io(u), cwd);
 }
 
 fn add_claude_day(f: &mut FileState, sink: &mut Sink, day: &str, model: &str, u: Usage4, cwd: Option<&str>) {
     let tokens: i64 = u.iter().sum();
     f.tokens += tokens;
     f.add_io(u[0], u[2], u[1], u[3]);
-    sink.count_day(day, "claude", model, tokens, u[3], cwd);
+    sink.count_day(day, "claude", model, tokens, claude_io(u), cwd);
 }
 
 // ---- Codex ------------------------------------------------------------------------------------------------------
@@ -483,19 +483,22 @@ impl<'a> XLine<'a> {
         };
         f.total = total;
         f.tokens += tokens;
-        if let Some(l) = last {
+        // Without the last turn's usage only the total is known.
+        let io = last.map_or_else(Io::default, |l| {
             let cached = l.cached_input_tokens.num_or0();
-            f.add_io(
-                l.input_tokens.num_or0() - cached,
-                cached,
-                l.cache_write_input_tokens.num_or0(),
-                l.output_tokens.num_or0(),
-            );
+            Io {
+                inp: l.input_tokens.num_or0() - cached,
+                cr: cached,
+                cw: l.cache_write_input_tokens.num_or0(),
+                out: l.output_tokens.num_or0(),
+            }
+        });
+        if last.is_some() {
+            f.add_io(io.inp, io.cr, io.cw, io.out);
         }
-        let out = last.map_or(0, |l| l.output_tokens.num_or0());
         let day = sink.date(&self.timestamp);
         let model = f.model.clone().unwrap_or_default();
-        sink.count(day, "codex", &model, tokens, out, f.cwd.as_deref());
+        sink.count(day, "codex", &model, tokens, io, f.cwd.as_deref());
     }
 }
 
@@ -635,8 +638,14 @@ impl<'a> GLine<'a> {
             f.model = Some(model.clone());
             f.tokens += tokens;
             let cached = m.cached_read.num_or0();
-            f.add_io(m.input.num_or0() - cached, cached, m.cache_creation.num_or0(), m.output.num_or0());
-            sink.count(day, "grok", &model, tokens, m.output.num_or0(), f.cwd.as_deref());
+            let io = Io {
+                inp: m.input.num_or0() - cached,
+                cr: cached,
+                cw: m.cache_creation.num_or0(),
+                out: m.output.num_or0(),
+            };
+            f.add_io(io.inp, io.cr, io.cw, io.out);
+            sink.count(day, "grok", &model, tokens, io, f.cwd.as_deref());
         }
     }
 }

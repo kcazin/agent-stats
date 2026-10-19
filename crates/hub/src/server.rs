@@ -352,6 +352,11 @@ impl Hub {
                 let mut repo = tx.prepare_cached(
                     "INSERT INTO repos VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET tokens = max(tokens, excluded.tokens)",
                 )?;
+                let mut repo_io = tx.prepare_cached(
+                    "INSERT INTO repo_io VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT DO UPDATE SET inp = max(inp, excluded.inp), cr = max(cr, excluded.cr),
+                         cw = max(cw, excluded.cw), out = max(out, excluded.out)",
+                )?;
                 let mut remote = tx.prepare_cached(
                     "INSERT INTO repo_remotes VALUES (?, ?, ?, ?)
                        ON CONFLICT DO UPDATE SET remote = excluded.remote, updated = excluded.updated",
@@ -379,6 +384,9 @@ impl Hub {
                         continue;
                     }
                     repo.execute(params![r.machine, d.day, d.repo, d.tokens])?;
+                    if let Some([i, cr, cw, o]) = d.io {
+                        repo_io.execute(params![r.machine, d.day, d.repo, i, cr, cw, o])?;
+                    }
                     if let Some(rm) = &d.remote {
                         remote.execute(params![r.machine, d.repo, rm, now as i64])?;
                     }
@@ -1266,9 +1274,27 @@ pub fn gh_fetch() -> GithubFetch {
     })
 }
 
-/// Every repository, with remote, project (null = unassigned), tokens today and all time, first seen, machines.
+/// Every repository, with remote, project (null = unassigned), tokens today and all time, first seen, machines, and
+/// today's tokens by kind as far as reporters 0.7 on said (`ioToday`, null when none did).
 pub fn repos(db: &Connection, cfg: &Config, now: f64) -> rusqlite::Result<Vec<Obj>> {
     let today = compute::today(cfg, now);
+    let mut io_today: std::collections::HashMap<String, J> = std::collections::HashMap::new();
+    {
+        let mut st = db.prepare_cached(
+            "SELECT repo, total(inp), total(cr), total(cw), total(out) FROM repo_io WHERE day = ?1 GROUP BY repo",
+        )?;
+        let rows = st.query_map(params![today], |r| {
+            let n = |i| crate::db::num(r, i).map(|v| J::Num(v.unwrap_or(0.0)));
+            Ok((
+                r.get::<_, String>(0)?,
+                J::Obj(Obj::new().with("in", n(1)?).with("cr", n(2)?).with("cw", n(3)?).with("out", n(4)?)),
+            ))
+        })?;
+        for row in rows {
+            let (repo, io) = row?;
+            io_today.insert(repo, io);
+        }
+    }
     let mut st = db.prepare(
         "SELECT r.repo, total(r.tokens), total(CASE WHEN r.day = ?1 THEN r.tokens ELSE 0 END), min(r.day),
                 group_concat(DISTINCT r.machine), m.first_seen, m.first_machine,
@@ -1288,11 +1314,13 @@ pub fn repos(db: &Connection, cfg: &Config, now: f64) -> rusqlite::Result<Vec<Ob
             .map(J::from)
             .collect();
         let project = cfg.project_of(Some(&repo), remote.as_deref()).map(|p| p.key.clone());
+        let io = io_today.get(&repo).cloned().unwrap_or(J::Null);
         Ok(Obj::new()
             .with("repo", repo)
             .with("remote", remote)
             .with("project", project)
             .with("tokensToday", crate::db::num(r, 2)?.unwrap_or(0.0))
+            .with("ioToday", io)
             .with("tokensAll", crate::db::num(r, 1)?.unwrap_or(0.0))
             .with("firstDay", r.get::<_, Option<String>>(3)?)
             .with("firstSeen", r.get::<_, Option<i64>>(5)?)

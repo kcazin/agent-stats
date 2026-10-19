@@ -698,6 +698,8 @@ fn load_state(cfg: &Config) -> (State, bool) {
             } else {
                 log(&format!("ignoring {}: {why} (left in place)", cfg.state_file.display()));
             }
+            // This reporter's state existed, so the JS one was migrated long ago: counted again from the transcripts.
+            return (State::new(&cfg.tz_name), false);
         }
         Loaded::Missing => {}
     }
@@ -836,12 +838,31 @@ mod tests {
         // Nothing recounted: the file was read up to its end already; history from deleted transcripts is kept.
         assert_eq!(app.state.days["2026-10-12|claude|m"].tokens, 5);
         assert_eq!(app.state.days["2025-01-01|claude|old"].tokens, 1000);
-        assert_eq!(app.state.repos["2025-01-01|gone"], 1000);
+        assert_eq!(app.state.repos["2025-01-01|gone"].tokens, 1000);
         assert_eq!(app.state.t3, Some(1791894193808.0));
         // The JS state file is left alone, for a rollback.
         assert!(home.join("state/state.json").exists());
         app.save(true);
         assert!(home.join("state/reporter-state.json").exists());
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_older_state_is_counted_again_from_the_transcripts() {
+        let home = crate::ingest::tests::tmpdir("older-state");
+        write_transcript(&home);
+        fs::create_dir_all(home.join("state")).unwrap();
+        // A state of the last version, and the JS reporter's from long before: the transcripts win, not the JS state.
+        fs::write(home.join("state/reporter-state.json"), r#"{"v":1,"tz":"Asia/Tokyo","repos":{"2026-10-12|chum":5}}"#)
+            .unwrap();
+        fs::write(home.join("state/state.json"), r#"{"v":3,"repos":{"2020-01-01|old":9}}"#).unwrap();
+        let mut app = App::new(cfg(&home, Output::Send));
+        assert!(app.state.repos.is_empty());
+        app.tick();
+        assert_eq!(
+            app.state.repos["2026-10-12|chum"],
+            crate::state::RepoTotals { tokens: 5, io: crate::state::Io { inp: 5, ..Default::default() } }
+        );
         let _ = fs::remove_dir_all(&home);
     }
 
@@ -995,7 +1016,8 @@ mod tests {
         let b = reports(&h).pop().unwrap();
         assert_eq!(
             b["repos"],
-            serde_json::json!([{"day": "2026-10-12", "repo": "chum", "tokens": 5, "remote": "github.com/kcazin/chum"}])
+            serde_json::json!([{"day": "2026-10-12", "repo": "chum", "tokens": 5, "remote": "github.com/kcazin/chum",
+                "io": {"in": 5, "cr": 0, "cw": 0, "out": 0}}])
         );
         // Sessions use the same name (this one's cwd is under the temp dir, so it isn't listed as a session).
         assert_eq!(report::repo_name(&cwd, &app.cfg.home, Some(&app.git)), "chum");
@@ -1009,7 +1031,7 @@ mod tests {
         // State written when acks were keyed by name: "hub" (id abc) has acknowledged everything.
         let mut st = State::new("Asia/Tokyo");
         st.days.insert("2026-10-01|claude|m".into(), crate::state::Totals { tokens: 3, output: 0 });
-        st.repos.insert("2026-10-01|r".into(), 3);
+        st.repos.insert("2026-10-01|r".into(), crate::state::RepoTotals { tokens: 3, ..Default::default() });
         st.hubs.insert("hub".into(), Default::default());
         st.t3 = Some(1.0);
         state::save(&st, &home.join("state/reporter-state.json")).unwrap();

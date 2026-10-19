@@ -383,12 +383,14 @@ pub fn import(
                 _ => String::new(),
             };
             if r.n.is_finite() {
+                // T3 Code's cache says the output, not the rest of the split.
+                let out = if r.out.is_finite() { r.out as i64 } else { 0 };
                 sink.count(
                     r.ms,
                     agent.name(),
                     &model,
                     r.n as i64,
-                    if r.out.is_finite() { r.out as i64 } else { 0 },
+                    crate::state::Io { out, ..Default::default() },
                     None,
                 );
                 if r.ms.is_some() {

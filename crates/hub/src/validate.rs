@@ -35,6 +35,8 @@ pub struct RepoRow {
     pub repo: String,
     pub tokens: i64,
     pub remote: Option<String>,
+    /// The tokens by kind: fresh input, cache reads, cache writes, output (reporters 0.7 on).
+    pub io: Option<[i64; 4]>,
 }
 
 #[derive(Debug)]
@@ -242,8 +244,18 @@ pub fn report(body: &J, window: &DayWindow) -> Result<Report, Reject> {
             None | Some(J::Null) => None,
             v => Some(ident(v, &format!("repos[{i}].remote"), 512)?),
         };
+        let io = match d.get("io") {
+            Some(J::Obj(io)) => {
+                let mut v = [0; 4];
+                for (n, k) in ["in", "cr", "cw", "out"].into_iter().enumerate() {
+                    v[n] = count(io.get(k), &format!("repos[{i}].io.{k}"))?;
+                }
+                Some(v)
+            }
+            _ => None,
+        };
         match day {
-            Some(day) => repos.push(RepoRow { day, repo, tokens, remote }),
+            Some(day) => repos.push(RepoRow { day, repo, tokens, remote, io }),
             None => too_old += 1,
         }
     }
@@ -299,6 +311,22 @@ mod tests {
     }
     fn err(s: &str) -> Reject {
         report(&J::parse(s).unwrap(), &window()).unwrap_err()
+    }
+
+    #[test]
+    fn repo_rows_may_carry_their_split() {
+        let r = ok(
+            r#"{"machine":"m","repos":[{"day":"2026-10-12","repo":"a","tokens":10,"io":{"in":1,"cr":6,"cw":2,"out":1}},
+            {"day":"2026-10-12","repo":"b","tokens":3}]}"#,
+        );
+        assert_eq!(r.repos[0].io, Some([1, 6, 2, 1]));
+        assert_eq!(r.repos[1].io, None);
+        assert!(matches!(
+            err(
+                r#"{"machine":"m","repos":[{"day":"2026-10-12","repo":"a","tokens":1,"io":{"in":-1,"cr":0,"cw":0,"out":0}}]}"#
+            ),
+            Reject::Invalid(_)
+        ));
     }
 
     #[test]

@@ -493,6 +493,30 @@ pub fn projects(db: &Connection, cfg: &Config, now: f64) -> R<(Obj, Obj)> {
     Ok((round(all), round(now_p)))
 }
 
+/// Today's tokens per project by kind (`{in, cr, cw, out}`), as far as reporters 0.7 on said; a project none of
+/// them reported on isn't listed. Unattributed tokens have no split, so they aren't in it.
+pub fn projects_io_today(db: &Connection, cfg: &Config, now: f64) -> R<Obj> {
+    let remotes = repo_remotes(db)?;
+    let mut by: std::collections::BTreeMap<String, [f64; 4]> = std::collections::BTreeMap::new();
+    let mut st = db.prepare("SELECT machine, repo, inp, cr, cw, out FROM repo_io WHERE day = ?1")?;
+    let rows = st.query_map(params![today(cfg, now)], |r| {
+        let n = |i| crate::db::num(r, i).map(|v| v.unwrap_or(0.0));
+        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?, [n(2)?, n(3)?, n(4)?, n(5)?]))
+    })?;
+    for row in rows {
+        let (machine, repo, v) = row?;
+        let remote = remotes.get(&(machine.unwrap_or_default(), repo.clone().unwrap_or_default()));
+        let p = cfg.project_key(repo.as_deref(), remote.map(String::as_str));
+        let t = by.entry(p.to_string()).or_default();
+        for i in 0..4 {
+            t[i] += v[i];
+        }
+    }
+    Ok(by.into_iter().fold(Obj::new(), |o, (p, v)| {
+        o.with(&p, Obj::new().with("in", v[0]).with("cr", v[1]).with("cw", v[2]).with("out", v[3]))
+    }))
+}
+
 /// `(machine, repo) → remote`, from protocol-2 reports.
 pub fn repo_remotes(db: &Connection) -> R<std::collections::HashMap<(String, String), String>> {
     let mut st = db.prepare("SELECT machine, repo, remote FROM repo_remotes WHERE remote IS NOT NULL")?;
@@ -706,6 +730,12 @@ pub fn public_payload(db: &Connection, cfg: &Config, pile: Option<&Pile>, now: f
 
     let s = since(db, cfg, now)?;
     let (all, today_p) = projects(db, cfg, now)?;
+    // `todayIo` only once some reporter gave a split, so the payload stays hub.mjs's until then.
+    let io_today = projects_io_today(db, cfg, now)?;
+    let mut projects_j = Obj::new().with("all", all).with("today", today_p);
+    if !io_today.0.is_empty() {
+        projects_j.set("todayIo", J::Obj(io_today));
+    }
     let pile_j = match pile {
         Some(p) => Obj::new().with("tokens", js_round(p.tokens)).with("perHour", cfg.pile.per_hour).into(),
         None => J::Null,
@@ -725,7 +755,7 @@ pub fn public_payload(db: &Connection, cfg: &Config, pile: Option<&Pile>, now: f
         .with("activity", activity(db, now)?)
         .with("since", Obj::new().with("day", s.day).with("tokens", s.tokens).with("github", s.github))
         .with("pile", pile_j)
-        .with("projects", Obj::new().with("all", all).with("today", today_p))
+        .with("projects", projects_j)
         .with("calendar", calendar(db, &days_ago(cfg, now, 380.0))?)
         .with("projectList", J::Arr(project_list)))
 }

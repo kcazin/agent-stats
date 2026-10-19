@@ -75,7 +75,7 @@ fn report(machine: &str, extra: &str) -> String {
         r#"{{"machine":"{machine}","label":"{machine} label","platform":"linux","at":1,"full":true{extra},
         "days":[{{"day":"2026-10-14","agent":"claude","model":"claude-opus-4-5","tokens":1000,"output":10}}],
         "repos":[{{"day":"2026-10-14","repo":"secret-thing","tokens":400,"remote":"github.com/me/secret-thing"}},
-                 {{"day":"2026-10-14","repo":"neon","tokens":500}}],
+                 {{"day":"2026-10-14","repo":"neon","tokens":500,"io":{{"in":100,"cr":350,"cw":40,"out":10}}}}],
         "sessions":[]}}"#
     )
 }
@@ -201,6 +201,9 @@ match = ["*neon*"]
     assert_eq!(st, 200);
     assert!(repos.contains(r#""repo":"secret-thing","remote":"github.com/me/secret-thing","project":null"#), "{repos}");
     assert!(repos.contains(r#""repo":"neon","remote":null,"project":"neon""#), "{repos}");
+    // Today's split, where the reporter gave one.
+    assert!(repos.contains(r#""tokensToday":500,"ioToday":{"in":100,"cr":350,"cw":40,"out":10}"#), "{repos}");
+    assert!(repos.contains(r#""tokensToday":400,"ioToday":null"#), "{repos}");
     assert_eq!(get(&base, "/", &[("cookie", &format!("agent_stats_admin={}", hub.admin_token))]).0, 200);
 
     // A machine's read-only token reads what the dashboard reads; its reporting token doesn't, and the read-only

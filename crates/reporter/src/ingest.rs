@@ -490,8 +490,8 @@ pub fn ingest(path: &Path, f: &mut FileState, size: u64, mtime: f64, ino: u64, e
         }
         for (k, t) in fresh.repos {
             let o = merged.repos.entry(k.clone()).or_default();
-            let d = (t - *o).max(0);
-            if !old.baseline && d != 0 {
+            let d = t.beyond(o);
+            if !old.baseline && !d.is_zero() {
                 delta.add_repo(&k, d);
             }
             *o += d;
@@ -586,7 +586,8 @@ pub(crate) mod tests {
         let o = run(&p, &mut f);
         assert_eq!(o.delta.days["2026-10-12|claude|claude-opus-5-5"], crate::state::Totals { tokens: 122, output: 7 });
         assert_eq!(o.delta.days["2026-10-13|claude|claude-opus-5-5"], crate::state::Totals { tokens: 113, output: 2 });
-        assert_eq!(o.delta.repos["2026-10-12|chum"], 122);
+        assert_eq!(o.delta.repos["2026-10-12|chum"].tokens, 122);
+        assert_eq!(o.delta.repos["2026-10-12|chum"].io, crate::state::Io { inp: 5, cr: 100, cw: 10, out: 7 });
         assert_eq!(f.tokens, 235);
         assert_eq!(f.io, Some(crate::state::Io { inp: 6, cr: 200, cw: 20, out: 9 }));
         assert_eq!(f.model.as_deref(), Some("claude-opus-5-5"));
@@ -625,7 +626,7 @@ pub(crate) mod tests {
         s2 += "\n";
         append(&p, &s2);
         let o = run(&p, &mut f);
-        assert_eq!(o.delta.repos["2026-10-12|space-rock"], 3);
+        assert_eq!(o.delta.repos["2026-10-12|space-rock"].tokens, 3);
         assert_eq!(f.state.as_deref(), Some("thinking"));
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -684,7 +685,7 @@ pub(crate) mod tests {
         let mut f = FileState::new(Agent::Codex, None);
         let o = run(&p, &mut f);
         assert_eq!(o.delta.days["2026-10-12|codex|gpt-6-astra"], crate::state::Totals { tokens: 1500, output: 100 });
-        assert_eq!(o.delta.repos["2026-10-12|space-rock-ios"], 1500);
+        assert_eq!(o.delta.repos["2026-10-12|space-rock-ios"].tokens, 1500);
         assert_eq!(f.total, 1500);
         assert_eq!(f.io, Some(crate::state::Io { inp: 100, cr: 800, cw: 0, out: 100 }));
         assert_eq!(f.state.as_deref(), Some("run"));
@@ -714,7 +715,7 @@ pub(crate) mod tests {
         let o = run(&p, &mut f);
         assert_eq!(o.delta.days["2026-08-25|grok|grok-4.6-build"], crate::state::Totals { tokens: 44232, output: 932 });
         assert_eq!(o.delta.days["2026-08-25|grok|grok-4.6-mini"], crate::state::Totals { tokens: 15, output: 5 });
-        assert_eq!(o.delta.repos["2026-08-25|llm-park"], 44247);
+        assert_eq!(o.delta.repos["2026-08-25|llm-park"].tokens, 44247);
         assert_eq!(f.model.as_deref(), Some("grok-4.6-mini"));
         assert_eq!(f.state.as_deref(), Some("edit"));
         assert_eq!(f.state_at, Some(1787644161500.0));
@@ -797,7 +798,7 @@ pub(crate) mod tests {
         // Counted at the largest of each field: in 3, cw 12, cr 100, out 60 = 175, all on the first line's bucket.
         assert_eq!(o.delta.days.len(), 1, "{:?}", o.delta.days);
         assert_eq!(o.delta.days["2026-10-12|claude|opus"], crate::state::Totals { tokens: 175, output: 60 });
-        assert_eq!(o.delta.repos["2026-10-12|chum"], 175);
+        assert_eq!(o.delta.repos["2026-10-12|chum"].tokens, 175);
         assert_eq!(f.tokens, 175);
         assert_eq!(f.io, Some(crate::state::Io { inp: 3, cr: 100, cw: 12, out: 60 }));
         assert_eq!(f.model.as_deref(), Some("sonnet"));

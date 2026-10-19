@@ -35,6 +35,10 @@ const NEW_SCHEMA: &str = "
   -- When the hub first saw each repository (by name). Backfilled from `repos` without notifying.
   CREATE TABLE IF NOT EXISTS repo_meta (repo TEXT PRIMARY KEY, first_seen INTEGER, first_day TEXT,
     first_machine TEXT, remote TEXT);
+  -- A `repos` row's tokens by kind (fresh input, cache reads, cache writes, output), from reporters 0.7 on. Its own
+  -- table so replicas of older versions, which skip tables they don't know, still sync `repos`.
+  CREATE TABLE IF NOT EXISTS repo_io (machine TEXT, day TEXT, repo TEXT, inp INTEGER, cr INTEGER, cw INTEGER,
+    out INTEGER, PRIMARY KEY (machine, day, repo));
 ";
 
 /// The hub's state directory: created 0700, and tightened if an older run left it more open.

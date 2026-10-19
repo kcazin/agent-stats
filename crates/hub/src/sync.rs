@@ -23,6 +23,7 @@ pub struct Spec {
 pub const TABLES: &[Spec] = &[
     Spec { t: "usage", cols: &["machine", "day", "agent", "model", "tokens", "output"], key: 4, quiet: &[] },
     Spec { t: "repos", cols: &["machine", "day", "repo", "tokens"], key: 3, quiet: &[] },
+    Spec { t: "repo_io", cols: &["machine", "day", "repo", "inp", "cr", "cw", "out"], key: 3, quiet: &[] },
     Spec { t: "machines", cols: &["machine", "label", "platform", "last_seen", "sessions"], key: 1, quiet: &[] },
     Spec { t: "machine_meta", cols: &["machine", "version", "protocol", "auth", "updated"], key: 1, quiet: &[] },
     Spec { t: "repo_remotes", cols: &["machine", "repo", "remote", "updated"], key: 2, quiet: &[] },
@@ -249,6 +250,11 @@ fn merge_sql(t: &str) -> &'static [&'static str] {
                          AND (coalesce(?5, 0) > coalesce(tokens, 0) OR coalesce(?6, 0) > coalesce(output, 0))"],
         "repos" => &["UPDATE repos SET tokens = max(coalesce(tokens, 0), coalesce(?4, 0))
                        WHERE machine IS ?1 AND day IS ?2 AND repo IS ?3 AND coalesce(?4, 0) > coalesce(tokens, 0)"],
+        "repo_io" => &["UPDATE repo_io SET inp = max(coalesce(inp, 0), coalesce(?4, 0)), cr = max(coalesce(cr, 0), coalesce(?5, 0)),
+                         cw = max(coalesce(cw, 0), coalesce(?6, 0)), out = max(coalesce(out, 0), coalesce(?7, 0))
+                       WHERE machine IS ?1 AND day IS ?2 AND repo IS ?3
+                         AND (coalesce(?4, 0) > coalesce(inp, 0) OR coalesce(?5, 0) > coalesce(cr, 0)
+                              OR coalesce(?6, 0) > coalesce(cw, 0) OR coalesce(?7, 0) > coalesce(out, 0))"],
         "machines" => &["UPDATE machines SET label = ?2, platform = ?3, last_seen = ?4, sessions = ?5
                           WHERE machine IS ?1 AND coalesce(last_seen, 0) < coalesce(?4, 0)"],
         "machine_meta" => &["UPDATE machine_meta SET version = coalesce(?2, version), protocol = ?3, auth = ?4, updated = ?5
@@ -316,7 +322,7 @@ fn apply_row(tx: &Transaction, spec: &Spec, vals: &[Value], out: &mut Applied) -
             ))?
             .execute(params_from_iter(vals))?;
         if spec.t == "purges" {
-            for table in ["usage", "repos"] {
+            for table in ["usage", "repos", "repo_io"] {
                 tx.execute(
                     &format!(
                         "DELETE FROM {table} WHERE machine = ?1 AND (?2 IS NULL OR day >= ?2) AND (?3 IS NULL OR day <= ?3)"
@@ -425,6 +431,39 @@ mod tests {
         assert_eq!(seen, (12.0 * h) as i64);
         // Thirty days on, it no longer counts.
         assert!(crate::fleet::recent_addrs(&b, 12.0 * h + 31.0 * 24.0 * h).unwrap().is_empty());
+    }
+
+    #[test]
+    fn repo_splits_travel_and_take_the_larger_of_each_kind() {
+        let (a, mut b) = (db(), db());
+        a.execute_batch(
+            "INSERT INTO repos VALUES ('mini', '2026-10-01', 'neon', 100);
+             INSERT INTO repo_io VALUES ('mini', '2026-10-01', 'neon', 10, 70, 15, 5);",
+        )
+        .unwrap();
+        b.execute("INSERT INTO repo_io VALUES ('mini', '2026-10-01', 'neon', 12, 60, 15, 5)", []).unwrap();
+        let (_, ap) = pull(&a, &mut b, 0);
+        assert_eq!(ap.rows, 2);
+        let v: (i64, i64, i64, i64) = b
+            .query_row("SELECT inp, cr, cw, out FROM repo_io", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap();
+        assert_eq!(v, (12, 70, 15, 5));
+        // A replica that doesn't know the table (before 0.7) skips its rows and still takes the rest.
+        let (rows, _, _) = changes(&a, 0, 100).unwrap();
+        let old: Vec<J> = rows.iter().filter(|r| r.get("t").and_then(J::as_str) == Some("repo_io")).cloned().collect();
+        assert_eq!(old.len(), 1);
+        let mut c = db();
+        c.execute_batch("DROP TABLE repo_io").unwrap();
+        let unknown: Vec<J> = rows
+            .iter()
+            .map(|r| match r.get("t").and_then(J::as_str) {
+                Some("repo_io") => {
+                    J::Obj(Obj::new().with("t", "repo_kinds_from_the_future").with("v", r.get("v").cloned().unwrap()))
+                }
+                _ => r.clone(),
+            })
+            .collect();
+        assert_eq!(apply(&mut c, &unknown).unwrap().rows, 1);
     }
 
     #[test]

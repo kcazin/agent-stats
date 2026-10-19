@@ -30,6 +30,9 @@ pub struct RepoRow<'a> {
     /// The repository's normalized git remote (`github.com/o/r`), when it has one. Protocol 2.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<&'a str>,
+    /// The tokens by kind, as far as the agents said (a hub before 0.7 ignores it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub io: Option<Io>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Clone)]
@@ -193,7 +196,7 @@ pub fn rows<'a>(state: &'a State, full: bool, cutoff: &str, dirty: &Dirty) -> (V
         .map(|(k, v)| {
             let (day, repo, _) = split3(k);
             let remote = repo.and_then(|r| state.remotes.get(r)).map(String::as_str);
-            RepoRow { day, repo, tokens: *v, remote }
+            RepoRow { day, repo, tokens: v.tokens, remote, io: Some(v.io).filter(|io| !io.is_zero()) }
         })
         .collect();
     (days, repos)
@@ -321,7 +324,7 @@ mod tests {
         let mut s = State::new("Asia/Tokyo");
         for d in ["2024-01-01", "2025-06-01", "2026-10-01"] {
             s.days.insert(format!("{d}|claude|m"), Totals { tokens: 1, output: 0 });
-            s.repos.insert(format!("{d}|chum"), 1);
+            s.repos.insert(format!("{d}|chum"), crate::state::RepoTotals { tokens: 1, ..Default::default() });
         }
         s.remotes.insert("chum".into(), "github.com/o/chum".into());
         let mut dirty = Dirty::default();

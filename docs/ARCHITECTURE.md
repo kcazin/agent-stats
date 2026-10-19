@@ -80,6 +80,10 @@ Borrowed from how T3 Code runs its server and connects environments (`~/.t3/sour
     suggests. `add --ssh` does the install and join over the system `ssh` (batch mode, `accept-new` host keys, one
     POSIX script on stdin per round trip: probe, install.sh at this version, join), with the pairing code minted in
     hub.db here and carried only inside the script. `invite` prints the paste-able line. See docs/FLEET.md.
+14. **Tokens by kind, per repository.** From 0.7 the reporter keeps each repository's day split into fresh input,
+    cache reads, cache writes and output (as far as the agent says: a T3 Code import knows only the output), and a
+    repo row carries it as `io`. The hub keeps it in `repo_io`, beside `repos`, so a widget can count only some kinds
+    and still show today's figures. Reporter state 2 holds it: an older state is counted again from the transcripts.
 
 ## Files
 
@@ -237,8 +241,8 @@ the file doesn't set them.
   file in place and the JS hub can take it back (the parity harness checks both directions). New tables, all
   `CREATE TABLE IF NOT EXISTS`: `machine_tokens` (sha256 of each machine token, label, created, last_seen, revoked),
   `pair_codes` (sha256 of each code, expiry, used), `machine_meta` (reporter version, protocol, auth kind), `repo_remotes`
-  (machine, repo → remote), `repo_meta` (first seen; repos already in `repos` are backfilled without notifying).
-  `kv.schema_version` = 2.
+  (machine, repo → remote), `repo_meta` (first seen; repos already in `repos` are backfilled without notifying),
+  `repo_io` (from 0.7: a `repos` row's split by kind). `kv.schema_version` = 2.
 - **Same payload.** The public payload is computed exactly as hub.mjs computes it (same queries, float arithmetic,
   `Math.round`, key order, V8's sort for the agents list, whose comparator is inconsistent) and printed like
   `JSON.stringify`; `tests/hub-parity` byte-compares the two. Additions: `projectList`, and `projects.*` keys come from
@@ -294,7 +298,8 @@ the file doesn't set them.
 
 - `POST /report` (reporter → hub), `Authorization: Bearer <machine token or legacy token>`. Body: the JS reporter's
   shape (`machine, label, platform, at, full, days[], repos[], sessions[]`) plus, from protocol 2: `protocol`,
-  `version`, `machineId`, and `repos[].remote` when known. A machine token only accepts its own `machine`.
+  `version`, `machineId`, and `repos[].remote` when known; from 0.7, `repos[].io` (`{in, cr, cw, out}`, the row's
+  tokens by kind), which older hubs ignore. A machine token only accepts its own `machine`.
   Answers `{"ok":true}`; 401 bad token, 403 machine mismatch, 413 too large, 422 invalid, 426 protocol.
 - `POST /pair` (reporter → hub): `{code, machine, label, platform, version}` → `{hubId, name, token, viewToken, routes,
   timezone}` (`viewToken` and `timezone` from 0.5).
@@ -341,4 +346,6 @@ the file doesn't set them.
   reporters append to their hub entry.
 
 The public payload keeps the exact shape the kilcazn.com site reads today (`updated, live, today, history, activity,
-since, pile, projects, calendar`), and adds `projectList: [{key, name, color}]`.
+since, pile, projects, calendar`), and adds `projectList: [{key, name, color}]`, and from 0.7, once a reporter gave a
+split, `projects.todayIo: {<project>: {in, cr, cw, out}}` (today's tokens by kind; unattributed tokens have none).
+`/api/repos` gives each repository's `ioToday` (`{in, cr, cw, out}`, or null when no reporter gave a split).

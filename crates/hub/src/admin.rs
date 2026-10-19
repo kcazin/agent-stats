@@ -10,8 +10,8 @@ pub struct Purged {
     pub repos: usize,
 }
 
-/// Deletes `machine`'s per-day token rows (`usage`) and per-day repo rows (`repos`) with `from <= day <= to`
-/// (either bound optional). Machines, tokens and history of other machines are untouched.
+/// Deletes `machine`'s per-day token rows (`usage`) and per-day repo rows (`repos`, and their split in `repo_io`)
+/// with `from <= day <= to` (either bound optional). Machines, tokens and history of other machines are untouched.
 pub fn purge(db: &mut Connection, machine: &str, from: Option<&str>, to: Option<&str>) -> rusqlite::Result<Purged> {
     let tx = db.transaction()?;
     let mut n = [0; 2];
@@ -23,6 +23,10 @@ pub fn purge(db: &mut Connection, machine: &str, from: Option<&str>, to: Option<
             params![machine, from, to],
         )?;
     }
+    tx.execute(
+        "DELETE FROM repo_io WHERE machine = ?1 AND (?2 IS NULL OR day >= ?2) AND (?3 IS NULL OR day <= ?3)",
+        params![machine, from, to],
+    )?;
     tx.commit()?;
     Ok(Purged { usage: n[0], repos: n[1] })
 }

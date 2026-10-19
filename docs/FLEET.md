@@ -51,6 +51,7 @@ them), so replicas merge by union with fixed rules and never conflict:
 |---|---|---|
 | usage | machine, day, agent, model | tokens, output = max |
 | repos | machine, day, repo | tokens = max |
+| repo_io | machine, day, repo | in, cr, cw, out = max each (0.7 on; older replicas skip the table) |
 | machines | machine | newest `last_seen` wins (label, platform, sessions) |
 | machine_meta | machine | newest `updated` wins |
 | repo_remotes | machine, repo | newest `updated` wins |
@@ -60,7 +61,7 @@ them), so replicas merge by union with fixed rules and never conflict:
 | machine_tokens, view_tokens | machine | newer `created` replaces; same token: revoked/last_seen = max |
 | fleet_members | node | newest `updated` wins |
 | join_requests | id | approved/denied beat pending |
-| purges | machine, from, to | insert; deletes the matching usage/repos rows where applied |
+| purges | machine, from, to | insert; deletes the matching usage/repos/repo_io rows where applied |
 | machine_addrs | machine, addr | newest `seen` (a report's source address, refreshed at most hourly) |
 | kv `pile`, `fleet_config` | key | newest `at` / `stamp` wins |
 

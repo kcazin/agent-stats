@@ -9,8 +9,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// Bump when counting changes; older state is then rebuilt from the transcripts.
-pub const V: u32 = 1;
+/// Bump when counting changes; older state is then rebuilt from the transcripts. 2: repositories' tokens by kind.
+pub const V: u32 = 2;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -44,7 +44,8 @@ pub struct Totals {
     pub output: i64,
 }
 
-/// A session's running token split: fresh input, cache reads, cache writes, output.
+/// A token split: fresh input, cache reads, cache writes, output (a session's running one, or a repository's on a
+/// day).
 #[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Io {
     #[serde(rename = "in")]
@@ -54,13 +55,57 @@ pub struct Io {
     pub out: i64,
 }
 
+impl Io {
+    pub fn is_zero(&self) -> bool {
+        *self == Io::default()
+    }
+}
+
+/// A repository's tokens on a day: the total, and its split by kind as far as the agents said (a T3 Code import
+/// knows only the output, so its split can fall short of the total).
+#[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RepoTotals {
+    pub tokens: i64,
+    #[serde(default, skip_serializing_if = "Io::is_zero")]
+    pub io: Io,
+}
+
+impl RepoTotals {
+    pub fn is_zero(&self) -> bool {
+        self.tokens == 0 && self.io.is_zero()
+    }
+    /// What `self` holds beyond `old`, field by field (never negative).
+    pub fn beyond(&self, old: &RepoTotals) -> RepoTotals {
+        let d = |a: i64, b: i64| (a - b).max(0);
+        RepoTotals {
+            tokens: d(self.tokens, old.tokens),
+            io: Io {
+                inp: d(self.io.inp, old.io.inp),
+                cr: d(self.io.cr, old.io.cr),
+                cw: d(self.io.cw, old.io.cw),
+                out: d(self.io.out, old.io.out),
+            },
+        }
+    }
+}
+
+impl std::ops::AddAssign for RepoTotals {
+    fn add_assign(&mut self, o: RepoTotals) {
+        self.tokens += o.tokens;
+        self.io.inp += o.io.inp;
+        self.io.cr += o.io.cr;
+        self.io.cw += o.io.cw;
+        self.io.out += o.io.out;
+    }
+}
+
 /// Token totals keyed like the global ones: "day|agent|model" and "day|repo".
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
 pub struct Contrib {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub days: BTreeMap<String, Totals>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub repos: BTreeMap<String, i64>,
+    pub repos: BTreeMap<String, RepoTotals>,
 }
 
 impl Contrib {
@@ -78,11 +123,11 @@ impl Contrib {
             }
         }
     }
-    pub fn add_repo(&mut self, key: &str, tokens: i64) {
+    pub fn add_repo(&mut self, key: &str, v: RepoTotals) {
         match self.repos.get_mut(key) {
-            Some(v) => *v += tokens,
+            Some(o) => *o += v,
             None => {
-                self.repos.insert(key.to_owned(), tokens);
+                self.repos.insert(key.to_owned(), v);
             }
         }
     }
@@ -282,7 +327,7 @@ pub struct State {
     #[serde(default)]
     pub days: BTreeMap<String, Totals>,
     #[serde(default)]
-    pub repos: BTreeMap<String, i64>,
+    pub repos: BTreeMap<String, RepoTotals>,
     /// Before several hubs: the one hub's unacknowledged keys. Moved into `hubs` at startup, never written again.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub dirty: BTreeSet<String>,
@@ -332,10 +377,10 @@ impl State {
             }
         }
         for (k, t) in &delta.repos {
-            if *t == 0 {
+            if t.is_zero() {
                 continue;
             }
-            *self.repos.entry(k.clone()).or_default() += t;
+            *self.repos.entry(k.clone()).or_default() += *t;
             for p in self.hubs.values_mut() {
                 if !p.dirty_repos.contains(k) {
                     p.dirty_repos.insert(k.clone());
@@ -500,7 +545,7 @@ pub fn migrate_js(path: &Path, tz: &str) -> Result<Option<State>, String> {
     }
     if let Some(repos) = js.get("repos").and_then(Value::as_object) {
         for (k, v) in repos {
-            s.repos.insert(k.clone(), int(v));
+            s.repos.insert(k.clone(), RepoTotals { tokens: int(v), io: Io::default() });
         }
     }
     if let Some(files) = js.get("files").and_then(Value::as_object) {
