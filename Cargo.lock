@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-stats"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "agent-stats-fleet",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-common"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "libc",
  "serde",
@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-fleet"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "agent-stats-hub",
@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-hub"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "jiff",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-ops"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "agent-stats-reporter",
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-relay"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "serde_json",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "agent-stats-reporter"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "agent-stats-common",
  "jiff",
