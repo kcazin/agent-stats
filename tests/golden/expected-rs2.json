@@ -198,76 +198,166 @@
   "repos": [
     {
       "day": "2026-09-01",
+      "io": {
+        "cr": 200,
+        "cw": 0,
+        "in": 500,
+        "out": 200
+      },
       "repo": "site",
       "tokens": 900
     },
     {
       "day": "2026-10-08",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 70,
+        "out": 30
+      },
       "repo": "my proj",
       "tokens": 100
     },
     {
       "day": "2026-10-09",
+      "io": {
+        "cr": 500,
+        "cw": 0,
+        "in": 5,
+        "out": 10
+      },
       "repo": "blog",
       "tokens": 515
     },
     {
       "day": "2026-10-10",
+      "io": {
+        "cr": 1800,
+        "cw": 200,
+        "in": 1035,
+        "out": 242
+      },
       "repo": "site",
       "tokens": 3277
     },
     {
       "day": "2026-10-10",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 100,
+        "out": 20
+      },
       "repo": "t3-namer-xyz",
       "tokens": 120
     },
     {
       "day": "2026-10-10",
+      "io": {
+        "cr": 1950,
+        "cw": 0,
+        "in": 950,
+        "out": 250
+      },
       "repo": "webapp",
       "tokens": 3150
     },
     {
       "day": "2026-10-11",
+      "io": {
+        "cr": 300,
+        "cw": 10,
+        "in": 3,
+        "out": 12
+      },
       "repo": "game",
       "tokens": 325
     },
     {
       "day": "2026-10-11",
+      "io": {
+        "cr": 304,
+        "cw": 0,
+        "in": 362,
+        "out": 91
+      },
       "repo": "site",
       "tokens": 757
     },
     {
       "day": "2026-10-11",
+      "io": {
+        "cr": 100,
+        "cw": 20,
+        "in": 280,
+        "out": 100
+      },
       "repo": "webapp",
       "tokens": 1550
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 1,
+        "out": 9
+      },
       "repo": "game",
       "tokens": 10
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 30,
+        "out": 10
+      },
       "repo": "grokhelper",
       "tokens": 40
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 50,
+        "out": 10
+      },
       "repo": "helper",
       "tokens": 60
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 4,
+        "out": 6
+      },
       "repo": "misc",
       "tokens": 10
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 2,
+        "out": 2
+      },
       "repo": "scratch",
       "tokens": 4
     },
     {
       "day": "2026-10-12",
+      "io": {
+        "cr": 0,
+        "cw": 0,
+        "in": 1,
+        "out": 1
+      },
       "repo": "web",
       "tokens": 2
     }
@@ -675,7 +765,7 @@
       "io": {
         "cr": 1900,
         "cw": 20,
-        "in": 1090,
+        "in": 1070,
         "out": 260
       },
       "kind": "main",
@@ -735,7 +825,7 @@
       "io": {
         "cr": 604,
         "cw": 50,
-        "in": 1106,
+        "in": 1056,
         "out": 175
       },
       "kind": "main",

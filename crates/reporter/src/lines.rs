@@ -483,15 +483,10 @@ impl<'a> XLine<'a> {
         };
         f.total = total;
         f.tokens += tokens;
-        // Without the last turn's usage only the total is known.
+        // Without the last turn's usage only the total is known. The input counts the cache reads and writes too.
         let io = last.map_or_else(Io::default, |l| {
-            let cached = l.cached_input_tokens.num_or0();
-            Io {
-                inp: l.input_tokens.num_or0() - cached,
-                cr: cached,
-                cw: l.cache_write_input_tokens.num_or0(),
-                out: l.output_tokens.num_or0(),
-            }
+            let (cr, cw) = (l.cached_input_tokens.num_or0(), l.cache_write_input_tokens.num_or0());
+            Io { inp: (l.input_tokens.num_or0() - cr - cw).max(0), cr, cw, out: l.output_tokens.num_or0() }
         });
         if last.is_some() {
             f.add_io(io.inp, io.cr, io.cw, io.out);
@@ -637,13 +632,9 @@ impl<'a> GLine<'a> {
             let tokens = if m.total.nullish() { m.input.num_or0() + m.output.num_or0() } else { m.total.num_or0() };
             f.model = Some(model.clone());
             f.tokens += tokens;
-            let cached = m.cached_read.num_or0();
-            let io = Io {
-                inp: m.input.num_or0() - cached,
-                cr: cached,
-                cw: m.cache_creation.num_or0(),
-                out: m.output.num_or0(),
-            };
+            // The input counts the cache reads and writes too (the total is input and output).
+            let (cr, cw) = (m.cached_read.num_or0(), m.cache_creation.num_or0());
+            let io = Io { inp: (m.input.num_or0() - cr - cw).max(0), cr, cw, out: m.output.num_or0() };
             f.add_io(io.inp, io.cr, io.cw, io.out);
             sink.count(day, "grok", &model, tokens, io, f.cwd.as_deref());
         }

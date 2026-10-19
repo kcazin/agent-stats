@@ -110,4 +110,10 @@ The Rust reporter fixes some quirks above; the JS reporter stays as it is (the r
 | 5 Codex fork, first `token_count` without `last_token_usage` | that total is the baseline (counts 0), deltas count after | `...0c`: tokens 4350 -> 50; gpt-5.5 2026-10-11 5900 -> 1600; repo `site` 2026-10-11 5057 -> 757 |
 | 9 `toolKind` substrings | whole-word matching; MCP tools (`mcp__server__tool`) by the tool part's leading verb: list/get/read/search/fetch/find -> read, create/update/write/delete/edit/set -> edit, else tool | no number changes: `mcp__srv__list_tools` is still `read`, now because of the verb `list` (and `mcp__srv__do` is `tool`) |
 
+Additions, not in JS (0.7): every repo row carries `io` (`{in, cr, cw, out}`, the row's tokens by kind), its sum the row's
+`tokens` except where the agent didn't split them (Codex delta events, quirk 5: repo `webapp` 2026-10-11 has 1550 tokens,
+`io` 500; the T3 import gives the output only). Codex's and Grok's input counts their cache reads and writes, so fresh
+input (`io.in`, in repo rows and sessions) is input less both: session `...0a` io in 1090 -> 1070, Grok `g1000000-...0001`
+io in 1106 -> 1056.
+
 Left as in JS: quirks 4, 6, 7, 8, 10, 11, 12, 13. Totals (tokens) in `expected-rs.json`: claude 4544 -> 4599 (+55 for A1, +100 for the id-less line, -100 for R0), codex 11110 -> 6810 (-4300), grok 2125 unchanged.
