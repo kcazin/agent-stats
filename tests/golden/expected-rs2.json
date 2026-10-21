@@ -365,6 +365,7 @@
   "sessions": [
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/site",
       "id": "11111111-aaaa-4bbb-8ccc-000000000001",
       "io": {
@@ -385,6 +386,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Projects/game/.claude/worktrees/agent-1",
       "id": "44444444-aaaa-4bbb-8ccc-000000000004",
       "io": {
@@ -405,6 +407,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/notes/misc",
       "id": "55555555-aaaa-4bbb-8ccc-000000000005",
       "io": {
@@ -425,6 +428,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/.t3/scratch/idea1",
       "id": "66666666-aaaa-4bbb-8ccc-000000000006",
       "io": {
@@ -445,6 +449,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": null,
       "id": "77777777-aaaa-4bbb-8ccc-000000000007",
       "io": {
@@ -465,6 +470,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/site",
       "id": "88888888-aaaa-4bbb-8ccc-000000000008",
       "io": {
@@ -485,6 +491,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/site",
       "id": "agent-ab12cd",
       "io": {
@@ -505,6 +512,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-Agent",
       "io": null,
@@ -520,6 +528,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-AskUserQuestion",
       "io": null,
@@ -535,6 +544,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-BashOutput",
       "io": null,
@@ -550,6 +560,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-Bash",
       "io": null,
@@ -565,6 +576,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-Edit",
       "io": null,
@@ -580,6 +592,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-ExitPlanMode",
       "io": null,
@@ -595,6 +608,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-NotebookEdit",
       "io": null,
@@ -610,6 +624,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-Read",
       "io": null,
@@ -625,6 +640,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-Task",
       "io": null,
@@ -640,6 +656,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-TodoWrite",
       "io": null,
@@ -655,6 +672,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-WebFetch",
       "io": null,
@@ -670,6 +688,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-after-tool-result",
       "io": null,
@@ -685,6 +704,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-mcp__srv__do",
       "io": null,
@@ -700,6 +720,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-mcp__srv__list_tools",
       "io": null,
@@ -715,6 +736,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-no-timestamp",
       "io": null,
@@ -730,6 +752,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-thinking",
       "io": null,
@@ -745,6 +768,7 @@
     },
     {
       "agent": "claude",
+      "alive": false,
       "cwd": "{{HOME}}/Dev/kinds",
       "id": "kind-writing",
       "io": null,

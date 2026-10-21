@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 
 pub const ONLINE: f64 = 45_000.0; // a machine is online if it reported this recently
 pub const WORKING: f64 = 60_000.0; // a session is working if its transcript was written this recently
+/// ...or this recently while its reporter sees its process run: a long tool call writes nothing for minutes.
+pub const WORKING_ALIVE: f64 = 600_000.0;
 const DAY_MS: f64 = 86_400_000.0;
 
 type R<T> = rusqlite::Result<T>;
@@ -217,10 +219,23 @@ pub struct Live {
     pub subagents: usize,
     pub open: usize,
     pub by_agent: Obj,
+    /// The first time a working session stops working by time alone (`working_until`), for the streams to say so.
+    pub ages_out: Option<f64>,
 }
 
 fn working(s: &Obj) -> bool {
     s.get("working") == Some(&J::Bool(true))
+}
+
+/// Until when a session works, by its last write: `WORKING` after it, `WORKING_ALIVE` while its process runs. Not at
+/// all once its turn ended (`idle`) or its process is gone.
+fn working_until(s: &Obj) -> Option<f64> {
+    let alive = s.get("alive").and_then(|v| if let J::Bool(b) = v { Some(*b) } else { None });
+    if str_of(s, "state") == Some("idle") || alive == Some(false) {
+        return None;
+    }
+    let last = s.get("lastActivity").and_then(J::as_f64)?;
+    Some(last + if alive == Some(true) { WORKING_ALIVE } else { WORKING })
 }
 
 fn str_of<'a>(s: &'a Obj, k: &str) -> Option<&'a str> {
@@ -248,11 +263,16 @@ pub fn live(db: &Connection, now: f64) -> R<Live> {
         })?
         .collect::<R<_>>()?;
     let mut sessions: Vec<Obj> = Vec::new();
+    let mut ages_out: Option<f64> = None;
     for m in machines.iter().filter(|m| m.online) {
         for s in &m.sessions {
             let J::Obj(o) = s else { continue };
             let mut o = o.clone();
-            let w = o.get("lastActivity").and_then(J::as_f64).is_some_and(|t| now - t < WORKING);
+            let until = working_until(&o).filter(|&t| now < t);
+            let w = until.is_some();
+            if let Some(t) = until {
+                ages_out = Some(ages_out.map_or(t, |a| a.min(t)));
+            }
             o.set("machine", m.label.clone());
             o.set("working", J::Bool(w));
             sessions.push(o);
@@ -274,6 +294,7 @@ pub fn live(db: &Connection, now: f64) -> R<Live> {
         machines,
         sessions,
         by_agent,
+        ages_out,
     })
 }
 

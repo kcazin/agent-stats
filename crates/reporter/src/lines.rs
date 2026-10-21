@@ -10,6 +10,9 @@ use serde::Deserialize;
 use std::fmt;
 use std::marker::PhantomData;
 
+/// The state of a session whose turn has ended: it waits for the user's next prompt.
+pub const IDLE: &str = "idle";
+
 /// Where counted tokens go: the file's own contribution record, and (unless a rewritten file is being rebuilt)
 /// the delta to add to the global totals.
 pub struct Sink<'s> {
@@ -139,6 +142,11 @@ pub struct CLine<'a> {
     timestamp: JsVal<'a>,
     #[serde(borrow)]
     message: Lax<CMsg<'a>>,
+    /// Lines Claude Code adds for the model (caveats, a command's output, a compaction's summary), not the user's.
+    #[serde(rename = "isMeta", borrow)]
+    is_meta: JsVal<'a>,
+    #[serde(rename = "isCompactSummary", borrow)]
+    is_compact_summary: JsVal<'a>,
 }
 
 #[derive(Deserialize, Default)]
@@ -152,6 +160,8 @@ struct CMsg<'a> {
     usage: Lax<CUsage<'a>>,
     #[serde(borrow)]
     content: Content<'a>,
+    #[serde(borrow)]
+    stop_reason: JsVal<'a>,
 }
 
 #[derive(Deserialize, Default)]
@@ -174,15 +184,48 @@ struct Block<'a> {
     ty: JsVal<'a>,
     #[serde(borrow)]
     name: JsVal<'a>,
+    #[serde(borrow)]
+    text: JsVal<'a>,
 }
 
-/// `message.content` summarised: how many blocks, the last one, and whether any is a tool result. That is all
-/// the state rules need (each block overwrites the state, so only the last one shows).
+/// What a user line's text says: a prompt (a turn starts), a command or other markup Claude Code wrote (`<...>`),
+/// or that the user interrupted the turn.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Said {
+    Prompt,
+    Markup,
+    Interrupt,
+}
+
+impl Said {
+    fn of(text: &str) -> Said {
+        if text.contains("[Request interrupted by user") {
+            Said::Interrupt
+        } else if text.trim_start().starts_with('<') {
+            Said::Markup
+        } else {
+            Said::Prompt
+        }
+    }
+    /// Text blocks in order: an interruption anywhere wins, else the first block says what the line is.
+    fn add(prev: Option<Said>, text: &str) -> Option<Said> {
+        let s = Said::of(text);
+        match prev {
+            Some(Said::Interrupt) => prev,
+            Some(_) if s != Said::Interrupt => prev,
+            _ => Some(s),
+        }
+    }
+}
+
+/// `message.content` summarised: how many blocks, the last one, whether any is a tool result, and what its text
+/// says. That is all the state rules need (each block overwrites the state, so only the last one shows).
 #[derive(Default)]
 struct Content<'a> {
     len: usize,
     last: Block<'a>,
     tool_result: bool,
+    said: Option<Said>,
 }
 
 struct ContentVisitor<'a>(PhantomData<&'a ()>);
@@ -199,6 +242,11 @@ impl<'de: 'a, 'a> Visitor<'de> for ContentVisitor<'a> {
             c.len += 1;
             if b.ty.is("tool_result") {
                 c.tool_result = true;
+            }
+            if b.ty.is("text") {
+                if let Some(t) = b.text.as_str() {
+                    c.said = Said::add(c.said, t);
+                }
             }
             c.last = b;
         }
@@ -220,8 +268,9 @@ impl<'de: 'a, 'a> Visitor<'de> for ContentVisitor<'a> {
     fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E> {
         Ok(Content::default())
     }
-    fn visit_str<E>(self, _: &str) -> Result<Self::Value, E> {
-        Ok(Content::default())
+    /// A prompt given as a plain string.
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> {
+        Ok(Content { len: 1, said: Some(Said::of(s)), ..Content::default() })
     }
     fn visit_unit<E>(self) -> Result<Self::Value, E> {
         Ok(Content::default())
@@ -241,15 +290,20 @@ impl<'de: 'a, 'a> Deserialize<'de> for Content<'a> {
 }
 
 impl<'a> CLine<'a> {
-    /// The state this line leaves the session in, if it sets one.
+    /// The state this line leaves the session in, if it sets one. A response that stopped for any reason but a tool
+    /// call ends the turn (`end_turn`, or the `stop_sequence` of an API error Claude Code writes), and so does the
+    /// user interrupting it: the session is `idle`. A prompt starts a turn.
     fn act(&self) -> Option<&'static str> {
-        let c = &self.message.get()?.content;
+        let m = self.message.get()?;
+        let c = &m.content;
         if c.len == 0 {
             return None;
         }
         if self.ty.is("assistant") {
             let b = &c.last;
-            Some(if b.ty.is("thinking") || b.ty.is("redacted_thinking") {
+            Some(if m.stop_reason.as_str().is_some_and(|r| r != "tool_use" && r != "pause_turn") {
+                IDLE
+            } else if b.ty.is("thinking") || b.ty.is("redacted_thinking") {
                 "thinking"
             } else if b.ty.is("tool_use") {
                 tool_kind_of(&b.name)
@@ -258,8 +312,14 @@ impl<'a> CLine<'a> {
             })
         } else if c.tool_result {
             Some("thinking")
-        } else {
+        } else if !self.ty.is("user") || self.is_meta.truthy() || self.is_compact_summary.truthy() {
             None
+        } else {
+            match c.said {
+                Some(Said::Interrupt) => Some(IDLE),
+                Some(Said::Prompt) => Some("thinking"),
+                _ => None,
+            }
         }
     }
 
@@ -417,9 +477,22 @@ impl XUsage<'_> {
 }
 
 impl<'a> XLine<'a> {
+    /// A turn runs from `task_started` to `task_complete`, or `turn_aborted` when the user stops it.
     pub fn act(&self) -> Option<&'static str> {
         let p = self.payload.get()?;
-        if !self.ty.is("response_item") || !self.timestamp.truthy() {
+        if !self.timestamp.truthy() {
+            return None;
+        }
+        if self.ty.is("event_msg") {
+            return if p.ty.is("task_started") {
+                Some("thinking")
+            } else if p.ty.is("task_complete") || p.ty.is("turn_aborted") {
+                Some(IDLE)
+            } else {
+                None
+            };
+        }
+        if !self.ty.is("response_item") {
             return None;
         }
         let pt = p.ty.js_string();
@@ -578,9 +651,12 @@ impl<'a> GLine<'a> {
         self.params.get()?.update.get()
     }
 
+    /// A turn runs from the user's message to `turn_completed`.
     pub fn act(&self) -> Option<&'static str> {
         let u = self.update()?;
-        if u.su.is("agent_thought_chunk") {
+        if u.su.is("turn_completed") {
+            Some(IDLE)
+        } else if u.su.is("user_message_chunk") || u.su.is("agent_thought_chunk") {
             Some("thinking")
         } else if u.su.is("agent_message_chunk") {
             Some("writing")

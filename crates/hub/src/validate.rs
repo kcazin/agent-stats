@@ -10,7 +10,7 @@ use jiff::civil::Date;
 pub const SUPPORTED_PROTOCOLS: [u32; 2] = [1, 2];
 pub const AGENTS: [&str; 3] = ["claude", "codex", "grok"];
 pub const KINDS: [&str; 2] = ["main", "subagent"];
-pub const STATES: [&str; 8] = ["thinking", "writing", "run", "edit", "read", "delegate", "waiting", "tool"];
+pub const STATES: [&str; 9] = ["thinking", "writing", "run", "edit", "read", "delegate", "waiting", "tool", "idle"];
 /// Per row and day; real data peaks around 4e9, and a hub-wide total must stay far below i64.
 const MAX_TOKENS: f64 = 1e12;
 /// Timestamps in ms.
@@ -293,6 +293,10 @@ pub fn report(body: &J, window: &DayWindow) -> Result<Report, Reject> {
             .with("io", io);
         if let Some(remote) = text(s.get("remote"), 512) {
             o.set("remote", J::Str(remote));
+        }
+        // Whether the session's process runs, when the reporter can tell (agent-stats 0.8).
+        if let Some(J::Bool(alive)) = s.get("alive") {
+            o.set("alive", J::Bool(*alive));
         }
         sessions.push(J::Obj(o));
     }

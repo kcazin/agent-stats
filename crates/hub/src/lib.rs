@@ -191,7 +191,7 @@ pub fn start(
                     last = Some(std::time::Instant::now());
                     next_live = std::time::Instant::now() + server::LIVE_EVERY;
                     guarded("change", || h.on_change());
-                } else if std::time::Instant::now() >= next_live {
+                } else if std::time::Instant::now() >= next_live || h.aged_out() {
                     next_live = std::time::Instant::now() + server::LIVE_EVERY;
                     guarded("stream timer", || h.feed_private());
                 }

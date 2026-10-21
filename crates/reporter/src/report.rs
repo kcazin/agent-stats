@@ -9,6 +9,9 @@ use std::collections::{BTreeSet, HashMap};
 
 /// Sessions written in this window are reported as open.
 pub const OPEN_WINDOW: f64 = 30.0 * 60_000.0;
+/// Claude sessions written in this window say whether their process still runs (`alive`): the hub counts one
+/// whose process runs as working this long into a turn, and one whose process is gone not at all.
+pub const ALIVE_WINDOW: f64 = 10.0 * 60_000.0;
 
 #[derive(Serialize)]
 pub struct DayRow<'a> {
@@ -52,6 +55,9 @@ pub struct Session {
     #[serde(rename = "stateAt", serialize_with = "js_num_opt")]
     pub state_at: Option<f64>,
     pub io: Option<Io>,
+    /// Whether the process writing it still runs, when that is known (see [`ALIVE_WINDOW`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alive: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -106,8 +112,27 @@ pub fn repo_name(cwd: &str, home: &str, git: Option<&GitIds>) -> String {
     }
 }
 
-/// Live sessions: transcripts written in the last 30 minutes, outside temp dirs.
-pub fn sessions(state: &State, now: f64, home: &str, git: Option<&GitIds>) -> Vec<Session> {
+/// The session a Claude transcript belongs to (a subagent's: its parent's) and the transcript folder it is in:
+/// `projects/<folder>/<id>.jsonl` or `projects/<folder>/<id>/subagents/<agent>.jsonl`.
+pub fn claude_owner(path: &str) -> (&str, &str) {
+    let dir = dirname(path);
+    if basename(dir) == "subagents" {
+        let session = dirname(dir);
+        (basename(session), basename(dirname(session)))
+    } else {
+        (basename_ext(path, ".jsonl"), basename(dir))
+    }
+}
+
+/// Live sessions: transcripts written in the last 30 minutes, outside temp dirs. `alive`: by transcript path,
+/// whether the Claude sessions' processes run, as far as known.
+pub fn sessions(
+    state: &State,
+    now: f64,
+    home: &str,
+    git: Option<&GitIds>,
+    alive: &HashMap<String, bool>,
+) -> Vec<Session> {
     // Codex threads by id, to find a subagent's parent session.
     let mut codex_by_id: HashMap<&str, &str> = HashMap::new();
     for path in state.files.keys() {
@@ -160,6 +185,7 @@ pub fn sessions(state: &State, now: f64, home: &str, git: Option<&GitIds>) -> Ve
             state: f.state.clone().filter(|s| !s.is_empty()),
             state_at: f.state_at.filter(|t| *t != 0.0 && !t.is_nan()),
             io: f.io,
+            alive: alive.get(path).copied(),
         });
     }
     out
@@ -296,7 +322,7 @@ mod tests {
         add("/h/.grok/sessions/%2Fh%2FDev%2Fpark/01a0/updates.jsonl", Agent::Grok, &|f| {
             f.cwd = Some("/h/Dev/park".into())
         });
-        let out = sessions(&s, now, "/h", None);
+        let out = sessions(&s, now, "/h", None, &HashMap::new());
         assert_eq!(out.len(), 5);
         let by_id: HashMap<&str, &Session> = out.iter().map(|x| (x.id.as_str(), x)).collect();
         let main = by_id["abc"];

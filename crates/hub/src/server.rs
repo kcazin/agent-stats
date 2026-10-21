@@ -20,7 +20,8 @@ const COALESCE: Duration = Duration::from_millis(100);
 /// ...and act on changes at most once per this. With publishing on change, it is also the least gap between two
 /// publishes to one target.
 pub const CHANGE_GAP: Duration = Duration::from_secs(1);
-/// `/api/stream` gets `live` at least this often, so time-based states (working, online) age out.
+/// `/api/stream` gets `live` at least this often, so time-based states (working, online) age out. A session that
+/// stops working by time gets one within a second (`Hub::aged_out`).
 pub const LIVE_EVERY: Duration = Duration::from_secs(15);
 /// First line of every stream: how long an EventSource waits before reconnecting.
 const RETRY: &[u8] = b"retry: 3000\n\n";
@@ -182,6 +183,8 @@ pub struct Hub {
     public_feed: Mutex<Option<PublicDoc>>,
     /// The `repos` body `/api/stream` clients have; held while one joins or an event goes out.
     private_feed: Mutex<Option<String>>,
+    /// When the last `live` event's first working session stops working by time alone (hub clock, ms).
+    ages_out: Mutex<Option<f64>>,
     /// The `Arc` this hub lives in (`into_arc`), for the streams that outlive a request.
     me: Weak<Hub>,
     pub(crate) limiter: crate::auth::PairLimiter,
@@ -296,6 +299,7 @@ impl Hub {
             streams,
             public_feed: Mutex::new(None),
             private_feed: Mutex::new(None),
+            ages_out: Mutex::new(None),
             me: Weak::new(),
             limiter: Default::default(),
             new_repos,
@@ -793,9 +797,15 @@ impl Hub {
         let now = self.clock.now();
         let db = lock(&self.db);
         let l = compute::live(&db, now)?;
+        *lock(&self.ages_out) = l.ages_out;
         let live = Obj::new().with("now", now).with("sessions", J::Arr(l.sessions.into_iter().map(J::Obj).collect()));
         let repos = J::Arr(repos(&db, &self.cfg, now)?.into_iter().map(J::Obj).collect()).stringify();
         Ok((crate::stream::event("live", &J::Obj(live).stringify()), repos))
+    }
+
+    /// Whether a session `/api/stream` clients were last told works has stopped working by time since.
+    pub fn aged_out(&self) -> bool {
+        lock(&self.ages_out).is_some_and(|t| self.clock.now() >= t)
     }
 
     /// The pending join requests, as the `requests` event's body.
@@ -812,6 +822,7 @@ impl Hub {
         if self.streams.count(Feed::Private) == 0 {
             *feed = None;
             *lock(&self.requests_feed) = None;
+            *lock(&self.ages_out) = None;
             return;
         }
         let requests = self.requests_body();

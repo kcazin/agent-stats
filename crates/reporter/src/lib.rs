@@ -10,6 +10,7 @@ mod hub;
 mod ingest;
 mod js;
 mod lines;
+mod procs;
 pub mod release;
 mod report;
 mod scan;

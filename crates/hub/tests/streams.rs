@@ -264,6 +264,74 @@ fn api_stream_sends_live_then_repos_and_a_report_within_a_second() {
     assert_eq!(request(rig.addr, "GET", "/.well-known/agent-stats", "", "").0, 200);
 }
 
+/// A session as a reporter says it: `state`, `alive` (or none) and how long ago it was last written.
+fn session_as(id: &str, state: &str, alive: Option<bool>, ago_ms: f64) -> String {
+    let alive = alive.map(|a| format!(r#","alive":{a}"#)).unwrap_or_default();
+    format!(
+        r#"{{"id":"{id}","agent":"claude","kind":"main","parent":null,"cwd":"/x","repo":"neon","model":"m",
+            "lastActivity":{},"tokens":3,"state":"{state}","stateAt":null,"io":null{alive}}}"#,
+        NOW - ago_ms
+    )
+}
+
+fn working_in(sessions: &J) -> Vec<(String, bool)> {
+    let J::Arr(list) = sessions else { panic!("{}", sessions.stringify()) };
+    let mut out: Vec<(String, bool)> = list
+        .iter()
+        .map(|s| (s.get("id").unwrap().as_str().unwrap().to_owned(), s.get("working") == Some(&J::Bool(true))))
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn a_session_works_until_its_turn_ends_or_its_process_is_gone() {
+    let rig = rig("working", "");
+    report(
+        &rig,
+        &body(
+            "alpha",
+            10,
+            "neon",
+            &[
+                session_as("busy", "run", None, 30_000.0),
+                session_as("quiet", "run", None, 5.0 * 60_000.0),
+                session_as("long-tool", "run", Some(true), 5.0 * 60_000.0),
+                session_as("too-long", "run", Some(true), 11.0 * 60_000.0),
+                session_as("done", "idle", Some(true), 2_000.0),
+                session_as("killed", "run", Some(false), 2_000.0),
+            ],
+        ),
+    );
+    let (_, state) = request(rig.addr, "GET", "/api/state", "", "");
+    let state = J::parse(&state).unwrap();
+    let want = [
+        ("busy", true),
+        ("done", false),
+        ("killed", false),
+        ("long-tool", true),
+        ("quiet", false),
+        ("too-long", false),
+    ];
+    assert_eq!(working_in(state.get("sessions").unwrap()), want.map(|(i, w)| (i.to_owned(), w)));
+}
+
+#[test]
+fn api_stream_says_a_session_stopped_working_within_a_second_of_it() {
+    let rig = rig("ages-out", "");
+    // Written 58.5 s ago: it stops working 1.5 s from now, by time alone.
+    report(&rig, &body("alpha", 10, "neon", &[session_as("s1", "run", None, 58_500.0)]));
+    let mut s = Stream::open(rig.addr, "/api/stream", "");
+    let live = s.until("live", Duration::from_secs(5), |_| true).expect("live");
+    assert_eq!(working_in(J::parse(&live).unwrap().get("sessions").unwrap()), [("s1".to_owned(), true)]);
+    // The hub's clock is frozen here: move it past then. No report comes, and the next LIVE_EVERY is 15 s away.
+    rig.hub.clock.set(NOW + 2_000.0);
+    let t = Instant::now();
+    let live = s.until("live", Duration::from_secs(5), |d| d.contains(r#""working":false"#)).expect("live, s1 done");
+    assert!(t.elapsed() < Duration::from_millis(1500), "took {:?}", t.elapsed());
+    assert_eq!(working_in(J::parse(&live).unwrap().get("sessions").unwrap()), [("s1".to_owned(), false)]);
+}
+
 /// Each POST body and when it arrived.
 fn sink() -> (String, mpsc::Receiver<(Instant, String)>) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -116,4 +116,8 @@ Additions, not in JS (0.7): every repo row carries `io` (`{in, cr, cw, out}`, th
 input (`io.in`, in repo rows and sessions) is input less both: session `...0a` io in 1090 -> 1070, Grok `g1000000-...0001`
 io in 1106 -> 1056.
 
+Additions, not in JS (0.8): a Claude session written in the last 10 minutes says `alive`, whether a Claude Code process
+that may write it runs. No process owns the fixture's folders, so every such session has `"alive": false`. The fixtures end
+no turn, so no session is `idle`.
+
 Left as in JS: quirks 4, 6, 7, 8, 10, 11, 12, 13. Totals (tokens) in `expected-rs.json`: claude 4544 -> 4599 (+55 for A1, +100 for the id-less line, -100 for R0), codex 11110 -> 6810 (-4300), grok 2125 unchanged.

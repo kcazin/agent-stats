@@ -111,17 +111,29 @@ const C_USAGE: u32 = 1;
 const C_CWD: u32 = 2;
 const C_ASSISTANT: u32 = 4;
 const C_TOOL_RESULT: u32 = 8;
+const C_USER: u32 = 16;
 // Codex
 const X_MUST: u32 = 1 | 2 | 4;
-const X_RESPONSE_ITEM: u32 = 8;
+/// A response item, or a turn starting or ending.
+const X_ACT: u32 = 8 | 16 | 32 | 64;
 // Grok
 const G_TURN: u32 = 1;
 const G_UPDATE: u32 = 2;
 
 fn needles(agent: Agent) -> Needles {
     match agent {
-        Agent::Claude => Needles::new(&[b"\"usage\"", b"\"cwd\"", b"\"assistant\"", b"\"tool_result\""]),
-        Agent::Codex => Needles::new(&[b"token_count", b"turn_context", b"session_meta", b"response_item"]),
+        Agent::Claude => {
+            Needles::new(&[b"\"usage\"", b"\"cwd\"", b"\"assistant\"", b"\"tool_result\"", b"\"type\":\"user\""])
+        }
+        Agent::Codex => Needles::new(&[
+            b"token_count",
+            b"turn_context",
+            b"session_meta",
+            b"response_item",
+            b"task_started",
+            b"task_complete",
+            b"turn_aborted",
+        ]),
         Agent::Grok => Needles::new(&[b"turn_completed", b"sessionUpdate"]),
     }
 }
@@ -317,7 +329,7 @@ impl Proc<'_, '_> {
                             self.resolve_cwd();
                         }
                     }
-                    if fl & (C_ASSISTANT | C_TOOL_RESULT) != 0 {
+                    if fl & (C_ASSISTANT | C_TOOL_RESULT | C_USER) != 0 {
                         self.defer_act(&l);
                     }
                     return;
@@ -329,7 +341,7 @@ impl Proc<'_, '_> {
             }
             Agent::Codex => {
                 if fl & X_MUST == 0 {
-                    if fl & X_RESPONSE_ITEM != 0 {
+                    if fl & X_ACT != 0 {
                         self.defer_act(&l);
                     }
                     return;
@@ -717,9 +729,70 @@ pub(crate) mod tests {
         assert_eq!(o.delta.days["2026-08-25|grok|grok-4.6-mini"], crate::state::Totals { tokens: 15, output: 5 });
         assert_eq!(o.delta.repos["2026-08-25|llm-park"].tokens, 44247);
         assert_eq!(f.model.as_deref(), Some("grok-4.6-mini"));
-        assert_eq!(f.state.as_deref(), Some("edit"));
-        assert_eq!(f.state_at, Some(1787644161500.0));
+        assert_eq!(f.state.as_deref(), Some("idle"), "the turn completed");
+        assert_eq!(f.state_at, Some(1787644184000.0));
         assert_eq!(f.io, Some(crate::state::Io { inp: 5550, cr: 37760, cw: 0, out: 937 }));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn turns_start_and_end() {
+        let d = tmpdir("turns");
+        let p = d.join("s.jsonl");
+        let user = |content: &str, extra: &str| {
+            format!(
+                r#"{{"type":"user","cwd":"/x","timestamp":"2026-10-12T01:00:00Z"{extra},"message":{{"role":"user","content":{content}}}}}"#
+            ) + "\n"
+        };
+        let assistant = |id: &str, block: &str, stop: &str| {
+            format!(
+                r#"{{"type":"assistant","cwd":"/x","timestamp":"2026-10-12T01:00:01Z","message":{{"id":"{id}","content":[{block}],"stop_reason":{stop},"usage":{{"input_tokens":1}}}}}}"#
+            ) + "\n"
+        };
+        let mut f = FileState::new(Agent::Claude, None);
+        let mut step = |line: String, want: &str| {
+            append(&p, &line);
+            run(&p, &mut f);
+            assert_eq!(f.state.as_deref(), Some(want), "after {line}");
+        };
+        write(&p, "");
+        step(user(r#""fix the build""#, ""), "thinking");
+        step(assistant("m1", r#"{"type":"tool_use","name":"Bash"}"#, r#""tool_use""#), "run");
+        step(user(r#"[{"type":"tool_result","content":"ok"}]"#, ""), "thinking");
+        step(assistant("m2", r#"{"type":"thinking"}"#, "null"), "thinking");
+        step(assistant("m2", r#"{"type":"text","text":"Done."}"#, r#""end_turn""#), "idle");
+        // What Claude Code adds after a turn doesn't start one.
+        step(user(r#""<local-command-caveat>x</local-command-caveat>""#, r#","isMeta":true"#), "idle");
+        step(user(r#"[{"type":"text","text":"<command-name>/model</command-name>"}]"#, ""), "idle");
+        step(user(r#""This session is being continued""#, r#","isCompactSummary":true"#), "idle");
+        step(user(r#"[{"type":"text","text":"and the tests"}]"#, ""), "thinking");
+        step(user(r#"[{"type":"text","text":"[Request interrupted by user]"}]"#, ""), "idle");
+        step(user(r#""again""#, ""), "thinking");
+        // An API error ends the turn too.
+        step(assistant("m3", r#"{"type":"text","text":"API Error"}"#, r#""stop_sequence""#), "idle");
+        // Several lines at once: the last one that sets the state wins.
+        let mut lines = user(r#""one more""#, "");
+        lines += &assistant("m4", r#"{"type":"tool_use","name":"Read"}"#, r#""tool_use""#);
+        lines += &user(r#"[{"type":"tool_result","content":"x"}]"#, "");
+        step(lines, "thinking");
+
+        let p = d.join("rollout.jsonl");
+        let ev = |ty: &str| {
+            format!(r#"{{"timestamp":"2026-10-12T01:00:00Z","type":"event_msg","payload":{{"type":"{ty}"}}}}"#) + "\n"
+        };
+        let item = r#"{"timestamp":"2026-10-12T01:00:01Z","type":"response_item","payload":{"type":"function_call","name":"shell"}}"#.to_owned() + "\n";
+        let mut f = FileState::new(Agent::Codex, None);
+        let mut step = |line: String, want: &str| {
+            append(&p, &line);
+            run(&p, &mut f);
+            assert_eq!(f.state.as_deref(), Some(want), "after {line}");
+        };
+        write(&p, "");
+        step(ev("task_started"), "thinking");
+        step(item.clone(), "run");
+        step(ev("task_complete"), "idle");
+        step(ev("task_started") + &item, "run");
+        step(ev("turn_aborted"), "idle");
         let _ = std::fs::remove_dir_all(&d);
     }
 

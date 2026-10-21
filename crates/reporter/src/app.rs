@@ -6,6 +6,7 @@ use crate::git::GitIds;
 use crate::hub::{Http, Link};
 use crate::ingest::{self, Env};
 use crate::js::{basename, decode_uri_component, dirname, DayCache};
+use crate::procs::Procs;
 use crate::report::{self, Dirty};
 use crate::scan::{inode, mtime_ms, Listed, Scanner};
 use crate::state::{self, Agent, FileState, Loaded, State};
@@ -82,6 +83,15 @@ pub struct App {
     hot: Vec<usize>,
     /// Signature of the live sessions (see `sessions_sig`) as of the last tick that looked.
     sig: u64,
+    /// Lists this machine's processes (`Procs::scan`; tests put their own).
+    pub procs: fn() -> Option<Procs>,
+    /// By transcript path, whether the recent Claude sessions' processes run (see `check_procs`).
+    alive: HashMap<String, bool>,
+    /// Sessions found without a process: the transcript's mtime then.
+    gone_at: HashMap<String, f64>,
+    /// Sessions written after they were found without a process: something we can't see writes them (another
+    /// user, a container), so their process isn't looked for again.
+    unowned: HashSet<String>,
     /// Slow ticks so far; the stat tiers count in these.
     tick_no: u64,
     http: Http,
@@ -128,13 +138,13 @@ fn wants_send(force: bool, unacked: bool, sessions_changed: bool, since_last: Op
     force || unacked || sessions_changed || since_last.is_none_or(|d| d >= HEARTBEAT)
 }
 
-/// What a hub's view of the live sessions depends on: ids, state, stateAt, model, tokens and io. Order-free
+/// What a hub's view of the live sessions depends on: ids, state, stateAt, model, tokens, io and alive. Order-free
 /// (the sessions come out of a map), and not the last-activity time, which moves with every write.
 fn sessions_sig(sessions: &[report::Session]) -> u64 {
     let mut sum = 0u64;
     for s in sessions {
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (&s.id, s.agent, s.kind, &s.parent, &s.model, s.tokens, &s.state).hash(&mut h);
+        (&s.id, s.agent, s.kind, &s.parent, &s.model, s.tokens, &s.state, s.alive).hash(&mut h);
         s.state_at.map(f64::to_bits).hash(&mut h);
         s.io.map(|io| (io.inp, io.cr, io.cw, io.out)).hash(&mut h);
         sum = sum.wrapping_add(h.finish());
@@ -157,6 +167,10 @@ impl App {
             listed: Vec::new(),
             hot: Vec::new(),
             sig: 0,
+            procs: Procs::scan,
+            alive: HashMap::new(),
+            gone_at: HashMap::new(),
+            unowned: HashSet::new(),
             tick_no: 0,
             http: Http::new(),
             links: Vec::new(),
@@ -394,6 +408,7 @@ impl App {
                 .filter(|&i| self.state.files.get(&self.listed[i].key).is_some_and(|f| is_hot(now - f.mtime)))
                 .collect();
         }
+        let procs_changed = self.check_procs(now_ms());
         let scanned = t0.elapsed();
         if self.state.t3.is_none() {
             self.import_t3();
@@ -417,7 +432,7 @@ impl App {
                 true
             }
             Output::Send => {
-                let sent = self.send(now, &cutoff, slow, force);
+                let sent = self.send(now, &cutoff, slow || procs_changed, force);
                 // The status file only says something new after a report or on the slow cadence.
                 if slow || self.last.sent {
                     self.write_status(false);
@@ -439,6 +454,48 @@ impl App {
             ));
         }
         sent
+    }
+
+    /// Finds which recent Claude sessions still have their process, from this machine's processes (none to look
+    /// for: no listing). Returns whether that changed. Runs every tick while a Claude session was written in the last
+    /// `ALIVE_WINDOW`, so a killed thread is reported within a tick.
+    fn check_procs(&mut self, now: f64) -> bool {
+        let recent: Vec<(&String, f64)> = self
+            .state
+            .files
+            .iter()
+            .filter(|(_, f)| f.agent == Agent::Claude && now - f.mtime < report::ALIVE_WINDOW)
+            .map(|(p, f)| (p, f.mtime))
+            .filter(|(p, _)| !self.unowned.contains(*p))
+            .collect();
+        let procs = if recent.is_empty() { None } else { (self.procs)() };
+        let mut alive = HashMap::new();
+        if let Some(procs) = procs {
+            for (path, mtime) in recent {
+                let (id, folder) = report::claude_owner(path);
+                let up = procs.owns(id, folder);
+                if up {
+                    self.gone_at.remove(path);
+                } else {
+                    match self.gone_at.get(path) {
+                        Some(&at) if mtime > at => {
+                            self.gone_at.remove(path);
+                            self.unowned.insert(path.clone());
+                            continue;
+                        }
+                        Some(_) => {}
+                        None => {
+                            self.gone_at.insert(path.clone(), mtime);
+                        }
+                    }
+                }
+                alive.insert(path.clone(), up);
+            }
+        }
+        self.gone_at.retain(|p, _| alive.contains_key(p));
+        let changed = alive != self.alive;
+        self.alive = alive;
+        changed
     }
 
     /// Builds the report body with the keys these hubs (by state key) haven't acknowledged (all rows from `cutoff`
@@ -463,7 +520,7 @@ impl App {
             full,
             days,
             repos,
-            sessions: report::sessions(&self.state, now, &self.cfg.home, Some(&self.git)),
+            sessions: report::sessions(&self.state, now, &self.cfg.home, Some(&self.git), &self.alive),
         };
         out(&body)
     }
@@ -471,15 +528,16 @@ impl App {
     /// Sends one body to every hub that is due and wants one (`force`: every due hub), in parallel, and records
     /// each hub's acknowledgement. A hub wants a report when it has unacknowledged keys, when the live sessions
     /// differ from what it was last sent, or when `HEARTBEAT` has passed since the last attempt.
-    fn send(&mut self, now: f64, cutoff: &str, slow: bool, force: bool) -> bool {
+    fn send(&mut self, now: f64, cutoff: &str, recheck: bool, force: bool) -> bool {
         let at = Instant::now();
         let ready: Vec<usize> = (0..self.links.len()).filter(|&i| self.links[i].due(at)).collect();
         if ready.is_empty() {
             return false;
         }
-        // Sessions only change by a read, or by aging out of the open window, which the slow tick catches.
-        if slow || self.last.reads > 0 {
-            self.sig = sessions_sig(&report::sessions(&self.state, now, &self.cfg.home, Some(&self.git)));
+        // Sessions only change by a read, by a process ending, or by aging out of the open window, which the slow
+        // tick catches (`recheck`: either of those).
+        if recheck || self.last.reads > 0 {
+            self.sig = sessions_sig(&report::sessions(&self.state, now, &self.cfg.home, Some(&self.git), &self.alive));
         }
         let due: Vec<usize> = ready
             .into_iter()
@@ -1116,6 +1174,7 @@ mod tests {
             state: Some(state.into()),
             state_at: Some(5.0),
             io: None,
+            alive: None,
         }
     }
 
@@ -1171,6 +1230,51 @@ mod tests {
         // A hub in backoff stays skipped, however much is new.
         app.links[0].next_try = Some(Instant::now() + Duration::from_secs(60));
         app.links[0].last_sent = None;
+        app.tick_fast();
+        assert_eq!(reports(&good).len(), 3);
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    thread_local! {
+        static RUNNING: std::cell::RefCell<Vec<&'static str>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    fn running() -> Option<Procs> {
+        let list: Vec<Vec<String>> =
+            RUNNING.with(|r| r.borrow().iter().map(|c| c.split(' ').map(str::to_owned).collect()).collect());
+        Some(Procs::from(list, |_| None))
+    }
+
+    #[test]
+    fn a_session_whose_process_ends_is_reported_at_once() {
+        let home = crate::ingest::tests::tmpdir("procs");
+        let p = write_transcript(&home);
+        let good = hub_server("good", 200);
+        let mut app = App::new(cfg_hubs(&home, Output::Send, vec![hub("good", Some("good"), &[&good.url])]));
+        app.procs = running;
+        let alive = |r: &serde_json::Value| r["sessions"][0].get("alive").cloned();
+        RUNNING.with(|r| *r.borrow_mut() = vec!["claude --session-id=s"]);
+        app.tick();
+        assert_eq!(alive(&reports(&good)[0]), Some(serde_json::json!(true)));
+        app.tick_fast();
+        assert_eq!(reports(&good).len(), 1, "nothing changed");
+        // The thread is killed: the next fast tick says so.
+        RUNNING.with(|r| r.borrow_mut().clear());
+        app.tick_fast();
+        assert_eq!(reports(&good).len(), 2);
+        assert_eq!(alive(&reports(&good)[1]), Some(serde_json::json!(false)));
+        // Written all the same: by something we can't see, so its process is no longer looked for.
+        std::thread::sleep(Duration::from_millis(20));
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&p)
+            .unwrap()
+            .write_all(br#"{"type":"assistant","cwd":"/h/Dev/chum","timestamp":"2026-10-12T02:00:00Z","message":{"id":"b","model":"m","content":[{"type":"text"}],"usage":{"input_tokens":7}}}
+"#)
+            .unwrap();
+        app.tick_fast();
+        assert_eq!(reports(&good).len(), 3);
+        assert_eq!(alive(&reports(&good)[2]), None);
+        RUNNING.with(|r| *r.borrow_mut() = vec!["claude --session-id=s"]);
         app.tick_fast();
         assert_eq!(reports(&good).len(), 3);
         let _ = fs::remove_dir_all(&home);

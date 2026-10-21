@@ -171,10 +171,20 @@ Reporter details (crates/reporter):
   directories; the slow tick walks the directories (so a new transcript is found within ~15 s), reloads config.toml,
   and checks every file on its tier (idle under a day: every slow tick; under a week: every 2nd; older: every 4th;
   tiers count slow ticks). A hub gets a report as soon as it has something new: unacknowledged keys, or a change in the
-  live sessions (set of ids, state, stateAt, model, tokens, io). Otherwise it gets one at least every 13 s (a heartbeat;
+  live sessions (set of ids, state, stateAt, model, tokens, io, alive). Otherwise it gets one at least every 13 s (a heartbeat;
   hubs call a machine online for 45 s). Full sync every 10 min and the backoff are unchanged, and a hub in backoff is
   skipped. State saves (at most every 5 min unless urgent) and the status file (on change, at least every 60 s) do not
   follow the fast tick. An idle fast tick costs well under 1 ms.
+- **Turns and processes.** A session's `state` is what its last line says it does (`thinking`, `writing`, a tool
+  kind), and `idle` once its turn ended: a Claude response that stopped for anything but a tool call (`end_turn`, an
+  API error's `stop_sequence`) or `[Request interrupted by user…]`; Codex `task_complete` or `turn_aborted`; Grok
+  `turn_completed`. A prompt (Claude, Grok) or `task_started` (Codex) starts the next one. Claude sessions written in the
+  last 10 min also say `alive`: whether a Claude Code process that may write them runs. A process names its session
+  with `--session-id`/`--resume`; one that names none, resumes or forks may write any session of its transcript folder
+  (the cwd with every character but a letter or digit a dash). The processes are listed on every tick while such a
+  session exists (`proc_listallpids` + `KERN_PROCARGS2` on macOS, `/proc` on Linux; about 0.3 ms for 700 processes), so
+  a killed thread is reported within a second. A session written after it was found without a process has a writer the
+  reporter can't see (another user, a container): it says no `alive` from then on.
 - **config.toml is watched.** The reporter re-reads it when its mtime changes (checked on the slow tick), so `join` and
   `hubs remove` apply within ~15 s. Changing machine, label or timezone takes a restart.
 - **Git identity.** The search for a repository root stops at `$HOME` (a dotfiles repo in `$HOME` doesn't claim every
@@ -329,7 +339,10 @@ the file doesn't set them.
 - `GET /stats` (relay, or a public hub): the latest public payload, plus `stale: true` once it's older than 2 minutes.
 - `GET /api/stream` (hub, admin auth as `/api/state`): Server-Sent Events, chunked. First `retry: 3000`, then
   `event: live` (`{"now", "sessions"}`, exactly those fields of `/api/state`) and `event: repos` (the `/api/repos` body).
-  `live` again within a second of an accepted report and at least every 15 s; `repos` whenever it changes.
+  `live` again within a second of an accepted report or of a session ceasing to work by time, and at least every
+  15 s; `repos` whenever it changes. A session works (`working`) unless its turn ended (`idle`) or its process is gone
+  (`alive: false`), while it was written in the last 60 s, or 10 min when its process runs (`alive: true`: a long tool
+  call writes nothing for minutes).
 - `GET /presence?id=<tab id>` (relay): `{"online":N}`, tabs seen in the last 45 s; in memory only. No `id`: count only.
 - `GET /stream` (relay, or a public hub): Server-Sent Events of the `/stats` document, same CORS allowlist,
   `content-type: text/event-stream`, `cache-control: no-store`, `x-accel-buffering: no`, chunked (no content-length).
